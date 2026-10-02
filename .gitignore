@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+.pnpm/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# env
+.env
+.env.*
+!.env.example
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# editors / os
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# caches
+.cache/
+.eslintcache
+coverage/
+
+# dados pessoais do spike do Pluggy — nunca commitar
+spike-output/

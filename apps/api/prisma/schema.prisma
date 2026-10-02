@@ -1,0 +1,23 @@
+// Schema do Solidus. Ainda SEM models de negocio (base de infraestrutura apenas) — cada model
+// entra junto da spec que o justifica (01-fundacao-auth e a primeira).
+//
+// Padrao de RLS obrigatorio (ARCHITECTURE.md secao de banco): toda migration que CRIA uma tabela
+// termina com, para aquela tabela:
+//   ALTER TABLE "NomeDaTabela" ENABLE ROW LEVEL SECURITY;
+//   REVOKE ALL ON "NomeDaTabela" FROM anon, authenticated;
+// Sem policy nenhuma — o Prisma conecta como role `postgres` (dono do schema) e ignora RLS; o RLS
+// aqui existe so para fechar a Data API do Supabase (nao usada por este projeto) e qualquer acesso
+// futuro por anon/authenticated. `pnpm db:check-rls` falha o CI/local se alguma tabela ficar sem
+// RLS ou com grant residual para essas duas roles.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Transaction pooler (6543, pgbouncer=true&connection_limit=1) — usado em runtime pela API.
+  url       = env("DATABASE_URL")
+  // Session pooler (5432) — usado só pelo Prisma Migrate (migrations precisam de sessão longa).
+  directUrl = env("DIRECT_URL")
+}

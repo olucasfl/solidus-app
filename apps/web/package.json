@@ -1,0 +1,6 @@
+{
+  "name": "@solidus/web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Frontend do Solidus (React + Vite PWA) — pendente, começa depois do backend"
+}

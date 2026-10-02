@@ -1,0 +1,2 @@
+node scripts/guard-no-secrets.mjs
+pnpm lint-staged

@@ -1,0 +1,13 @@
+﻿packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Scripts de instalação (postinstall etc.) só rodam para quem está listado aqui — pnpm 10+ bloqueia
+# o resto por padrão (supply-chain). Adicione aqui quem precisar, nunca com approve-builds interativo.
+allowBuilds:
+  '@parcel/watcher': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+  unrs-resolver: true
