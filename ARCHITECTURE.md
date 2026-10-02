@@ -7,14 +7,16 @@ visão/decisões de produto; aqui é só o "como o código está organizado".
 ## 1. Estado atual (vale mais que qualquer resumo — confira a data do último commit)
 
 **Existe:** monorepo pnpm, ESLint 9 (flat) + Prettier + Husky + lint-staged + commitlint,
-`apps/api` com NestJS 11 (`health` só, guard "nega por padrão", `ValidationPipe` global, filtro de
-exceção, helmet, CORS, throttler básico), `packages/shared` (tipos `Centavos`/`CategoriaId`),
-Prisma configurado **sem nenhum model de negócio**, Jest configurado com 1 teste de domínio e 1
-e2e de `/health`. Scripts de spike do Pluggy em `apps/api/scripts/spike/`.
+`apps/api` com NestJS 11 (`health`, `auth` — usuário único via seed, login, refresh rotativo,
+logout, `me`; guard global validando o access token de verdade; `ValidationPipe` global, filtro de
+exceção, helmet, CORS, throttler básico com limite próprio no login), `packages/shared` (tipos
+`Centavos`/`CategoriaId`/contrato de auth), Prisma com os models `User` e `RefreshSession` (spec
+`01-fundacao-auth`), Jest configurado com teste de domínio, de DTO, de guard e e2e de `/health` e
+`/auth/*`. Scripts de spike do Pluggy em `apps/api/scripts/spike/`.
 
-**Não existe:** `apps/web` (só placeholder), qualquer model Prisma, qualquer módulo além de
-`health`, auth real (o guard nega tudo, não verifica token nenhum ainda), sync com o Pluggy, CI/CD,
-deploy. Cada um entra com sua própria spec (`docs/specs/INDEX.md`).
+**Não existe:** `apps/web` (só placeholder), qualquer módulo de negócio alem de `auth`, sync com o
+Pluggy, categorização, taxa de poupança, CI/CD, deploy. Cada um entra com sua própria spec
+(`docs/specs/INDEX.md`).
 
 ## 2. Workspaces
 
@@ -81,13 +83,19 @@ prisma/
 ### 4.2 Guard global "nega por padrão"
 
 `AccessGuard` (`common/guards/access.guard.ts`) é `APP_GUARD`: toda rota responde 401 a menos que
-tenha `@Public()` no método ou na classe. **Ele não verifica token nenhum ainda** — isso é de
-propósito: "seguro por padrão" não pode depender de uma verificação que não existe. A spec
-`01-fundacao-auth` troca o corpo do guard para validar o access token (JWT) e a sessão; a
-assinatura (`CanActivate`, `@Public()`) já fica pronta.
+tenha `@Public()` no método ou na classe. Desde a spec `01-fundacao-auth`, rota não-pública exige
+`Authorization: Bearer <accessToken>` — um JWT válido (assinatura + `exp`), verificado com
+`JWT_ACCESS_SECRET` via `JwtService` (`@nestjs/jwt`, registrado sem secret default — cada chamada
+passa o segredo certo, access ou refresh). Verificação é **stateless**: não consulta o banco a
+cada request. O payload (`{ sub: userId }`) fica em `request.user`, lido pelo decorator
+`@CurrentUser()` (`common/decorators/current-user.decorator.ts`).
 
-`ThrottlerGuard` (`@nestjs/throttler`) também é `APP_GUARD`, registrado depois — os dois guards
-globais rodam em cadeia; qualquer um que rejeitar encerra a request.
+`ApiThrottlerGuard` (`common/guards/api-throttler.guard.ts`, extende o `ThrottlerGuard` do
+`@nestjs/throttler`) também é `APP_GUARD`, registrado depois — os dois guards globais rodam em
+cadeia; qualquer um que rejeitar encerra a request. É uma subclasse (não o `ThrottlerGuard` puro)
+só para o corpo do erro 429 ter `code: 'LIMITE_TENTATIVAS'`, igual todo outro erro do projeto.
+`POST /auth/login` sobrescreve o limite global (`@Throttle()`, 5/min em vez do default de 60/min)
+— ver `modules/auth/auth.constants.ts`.
 
 ### 4.3 `GET /health`
 
@@ -95,12 +103,33 @@ globais rodam em cadeia; qualquer um que rejeitar encerra a request.
 devolve `{ status, timestamp, database }` — nunca versão ou detalhe interno. Usado por
 monitoramento e, futuramente, pelo cron externo antes de chamar `POST /sync`.
 
-### 4.4 Módulo novo (quando a primeira spec chegar)
+### 4.4 Módulo novo
 
 Um módulo por domínio em `apps/api/src/modules/<dominio>/`, registrado em `app.module.ts`. DTO
 com `class-validator` em toda rota que aceita body/query (o `ValidationPipe` global é
 `whitelist + forbidNonWhitelisted` — campo sem decorator não existe para a API). Regra de negócio
 com cálculo vai em `domain/`, não no service do módulo.
+
+### 4.5 `auth` (spec `01-fundacao-auth`)
+
+Usuário único (`User`, criado só pelo seed — **nunca** por rota: registro continua fechado para
+sempre). `POST /auth/login` (`@Public()`) aceita `{ email, senha, cliente?: 'web' | 'pwa' }` e
+devolve `{ accessToken, usuario }` + cookie `solidus_refresh` (`httpOnly`, `Secure` só em
+produção). Duas TTLs de refresh por `cliente`: `web` expira em 7 dias; `pwa` não tem TTL no banco
+(`RefreshSession.expiraEm: null`) — o cookie em si recebe `Max-Age` de 10 anos só para sobreviver a
+reaberturas do app, mas quem decide validade é sempre o banco, nunca o cookie. Múltiplas sessões
+simultâneas (uma `RefreshSession` por login/dispositivo).
+
+`POST /auth/refresh` (`@Public()`, lê o cookie) **rotaciona**: revoga a sessão atual e cria uma
+nova — reusar um refresh já revogado (token roubado usado depois do dono já ter rotacionado) é
+`401 AUTH_SESSAO_INVALIDA`, igual token inexistente ou vencido. `POST /auth/logout` revoga só a
+sessão do cookie atual. `GET /auth/me` devolve `{ id, email }` do access token já verificado pelo
+guard.
+
+Hash de senha: `argon2`. Hash do refresh no banco: SHA-256 do token puro (nunca o token em claro é
+gravado — `modules/auth/tokens.ts`). Erros tipados por `code` (`AUTH_CREDENCIAIS_INVALIDAS`,
+`AUTH_SESSAO_INVALIDA`, `LIMITE_TENTATIVAS`), em `modules/auth/auth-errors.ts` e
+`common/guards/api-throttler.guard.ts`.
 
 ### 4.5 Erros
 
@@ -111,6 +140,10 @@ segredo no log).
 
 ## 5. Prisma e RLS
 
+- **Modelos hoje** (`schema.prisma`): `User` (usuário único, criado pelo seed) e `RefreshSession`
+  (uma por login/dispositivo; `cliente: WEB | PWA` decide a TTL do refresh — spec
+  `01-fundacao-auth`, `ARCHITECTURE.md` §4.5). Nenhum model de domínio financeiro ainda (sync,
+  categorização, taxa de poupança entram com a spec de cada um).
 - `schema.prisma`: `datasource db` usa `DATABASE_URL` (pooler de transação, runtime) e
   `directUrl` com `DIRECT_URL` (pooler de sessão, só para `migrate`). O Prisma conecta como role
   `postgres` — RLS não afeta as queries da API; existe para fechar a Data API do Supabase (não
@@ -145,7 +178,7 @@ uma) em `.env.example`, na raiz.
 
 ## 8. O que falta documentar aqui
 
-Esta seção existe para não fingir completude: quando a spec `01-fundacao-auth` entrar, este
-arquivo ganha uma seção de módulos de negócio reais (§4.4 deixa de ser "quando a primeira spec
-chegar"), e uma seção de modelos Prisma deixa de estar vazia. Até lá, não assuma nenhum dos dois
-como implícito.
+Esta seção existe para não fingir completude: `01-fundacao-auth` já está documentada (§4.5, §5).
+Quando `02-sync-pluggy`, `03-categorizacao` e `04-taxa-de-poupanca` entrarem, cada uma ganha sua
+própria seção aqui (módulo em `modules/`, model(s) em `schema.prisma`) — não assuma nenhuma delas
+como implícita até lá. `apps/web` também começa do zero (hoje é só placeholder).

@@ -21,3 +21,37 @@ datasource db {
   // Session pooler (5432) — usado só pelo Prisma Migrate (migrations precisam de sessão longa).
   directUrl = env("DIRECT_URL")
 }
+
+// Usuário único, criado pelo seed (spec 01-fundacao-auth). Registro pela API continua fechado.
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique @db.VarChar(254)
+  senhaHash    String   @db.VarChar(255)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  sessoes RefreshSession[]
+}
+
+enum ClienteSessao {
+  WEB
+  PWA
+}
+
+// Uma sessão por login/dispositivo (múltiplas sessões simultâneas). O token em claro NUNCA é
+// gravado — só o hash SHA-256 (hex, 64 chars), igual qualquer outro segredo de uso único.
+// expiraEm null = sessão PWA, sem TTL por tempo (só revogada por logout, reuso detectado, ou
+// limpeza manual direto no banco — spec 01-fundacao-auth, "Fora de escopo").
+model RefreshSession {
+  id         String        @id @default(uuid())
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cliente    ClienteSessao
+  tokenHash  String        @db.Char(64)
+  criadoEm   DateTime      @default(now())
+  expiraEm   DateTime?
+  revogadoEm DateTime?
+
+  @@index([userId])
+  @@index([tokenHash])
+}

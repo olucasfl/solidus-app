@@ -1,5 +1,6 @@
 import { type INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { createValidationPipe } from './common/pipes/validation.pipe';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
@@ -13,6 +14,9 @@ export function setupApp(app: INestApplication): void {
   const config = app.get<ConfigService<EnvironmentVariables, true>>(ConfigService);
 
   app.use(helmet());
+
+  // Lê o cookie do refresh token (spec 01-fundacao-auth).
+  app.use(cookieParser());
 
   // `credentials: true` + origem única (nunca `*`, recusado no boot): só o WEB_ORIGIN pode
   // chamar a API com cookie/sessão, quando ela existir (spec 01-fundacao-auth).
