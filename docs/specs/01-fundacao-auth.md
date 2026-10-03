@@ -1,9 +1,7 @@
 # Spec: Fundação e autenticação
 
-> Status: em andamento (2026-10-02) — implementação, typecheck, lint, testes e build verdes;
-> falta corrigir `SEED_USER_PASSWORD` no `.env` (menos de 8 caracteres, bloqueia o boot real da
-> API) e a conferência manual do cookie no DevTools antes de considerar implementada
-> (`docs/specs/INDEX.md`).
+> Status: implementada (2026-10-03) — CA-01 a CA-16 verificados: testes automatizados (40) + execução real
+> contra a API e o banco (script de QA, cookie conferido pelos headers).
 
 ## Objetivo
 

@@ -6,7 +6,7 @@ commit — `/docs-sync` confere se ela bate com a realidade.
 
 | Feature                  | Spec                                                          | Status          |
 | ------------------------ | ------------------------------------------------------------- | --------------- |
-| Fundação e autenticação  | [01-fundacao-auth.md](01-fundacao-auth.md)                    | 🚧 em andamento |
+| Fundação e autenticação  | [01-fundacao-auth.md](01-fundacao-auth.md)                    | ✅ implementada |
 | Sync com o Pluggy        | [02-sync-pluggy.md](02-sync-pluggy.md) (a escrever)           | 📋 prevista     |
 | Categorização por regras | [03-categorizacao.md](03-categorizacao.md) (a escrever)       | 📋 prevista     |
 | Taxa de poupança         | [04-taxa-de-poupanca.md](04-taxa-de-poupanca.md) (a escrever) | 📋 prevista     |
@@ -49,16 +49,7 @@ anterior:
 
 ## Pendências de execução humana
 
-**`01-fundacao-auth` — etapa 1 (API) implementada; falta conferência humana:**
-
-- [ ] ⚠️ **`SEED_USER_PASSWORD` no `.env` da raiz tem menos de 8 caracteres** —
-      `env.validation.ts` exige `MinLength(8)`. A API real (`pnpm dev`/`pnpm start`) **não sobe**
-      até isso ser corrigido (o `pnpm db:seed`, que lê a variável direto, funciona igual — já
-      rodado duas vezes, confirmando que o usuário único está criado e o seed é idempotente,
-      CA-16).
-- [ ] Inspeção manual do cookie `solidus_refresh` no DevTools, depois de um login real local
-      (`HttpOnly`/`Secure`/`SameSite` como esperado) — os testes automatizados já cobrem
-      `HttpOnly`, isto é só a conferência visual que o plano de testes da spec sugere.
+Nenhuma pendência aberta.
 
 Mudanças destrutivas de schema (`/db-change`) e outras aprovações explícitas exigidas por
 `.claude/rules/RULES.md` entram aqui quando existirem.
