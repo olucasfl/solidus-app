@@ -10,6 +10,7 @@ import { validateEnv } from './config/env.validation';
 import { PrismaModule } from './database/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
+import { SyncModule } from './modules/sync/sync.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { HealthModule } from './modules/health/health.module';
     PrismaModule,
     AuthModule,
     HealthModule,
+    SyncModule,
     // Último de propósito: só casa rota que nenhum módulo anterior casou (ver CatchAllModule).
     CatchAllModule,
   ],

@@ -1,4 +1,4 @@
-import { assertCentavos, formatarCentavosBRL } from './centavos';
+import { assertCentavos, formatarCentavosBRL, reaisParaCentavos } from './centavos';
 
 describe('assertCentavos', () => {
   it('aceita inteiro e devolve o mesmo valor', () => {
@@ -26,5 +26,24 @@ describe('formatarCentavosBRL', () => {
 
   it('formata valor negativo', () => {
     expect(formatarCentavosBRL(-500)).toBe('-R$ 5,00');
+  });
+});
+
+describe('reaisParaCentavos', () => {
+  it.each([
+    [10.1, 1010],
+    [0.07, 7],
+    [-5.55, -555],
+    [1234.567, 123457],
+    [1.005, 101],
+    [0, 0],
+    [-0, 0],
+  ])('converte %p reais em %p centavos', (reais, centavos) => {
+    expect(reaisParaCentavos(reais)).toBe(centavos);
+  });
+
+  it('rejeita NaN e infinito', () => {
+    expect(() => reaisParaCentavos(Number.NaN)).toThrow(TypeError);
+    expect(() => reaisParaCentavos(Number.POSITIVE_INFINITY)).toThrow(TypeError);
   });
 });

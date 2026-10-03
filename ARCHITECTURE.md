@@ -7,15 +7,14 @@ visão/decisões de produto; aqui é só o "como o código está organizado".
 ## 1. Estado atual (vale mais que qualquer resumo — confira a data do último commit)
 
 **Existe:** monorepo pnpm, ESLint 9 (flat) + Prettier + Husky + lint-staged + commitlint,
-`apps/api` com NestJS 11 (`health`, `auth` — usuário único via seed, login, refresh rotativo,
+`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `auth` — usuário único via seed, login, refresh rotativo,
 logout, `me`; guard global validando o access token de verdade; `ValidationPipe` global, filtro de
 exceção, helmet, CORS, throttler básico com limite próprio no login), `packages/shared` (tipos
-`Centavos`/`CategoriaId`/contrato de auth), Prisma com os models `User` e `RefreshSession` (spec
-`01-fundacao-auth`), Jest configurado com teste de domínio, de DTO, de guard e e2e de `/health` e
+`Centavos`/`CategoriaId`/contrato de auth), Prisma com os models `User`/`RefreshSession` (spec
+`01-fundacao-auth`) e `Conta`/`Transacao`/`SyncRun` (spec `02-sync-pluggy`), Jest configurado com teste de domínio, de DTO, de guard e e2e de `/health` e
 `/auth/*`. Scripts de spike do Pluggy em `apps/api/scripts/spike/`.
 
-**Não existe:** `apps/web` (só placeholder), qualquer módulo de negócio alem de `auth`, sync com o
-Pluggy, categorização, taxa de poupança, CI/CD, deploy. Cada um entra com sua própria spec
+**Não existe:** `apps/web` (só placeholder), categorização, taxa de poupança, CI/CD, deploy. Cada um entra com sua própria spec
 (`docs/specs/INDEX.md`).
 
 ## 2. Workspaces
@@ -138,12 +137,29 @@ status/corpo; qualquer outro erro vira 500 genérico (`{ statusCode, message: "E
 o detalhe real só vai para o log do servidor (nunca para a resposta, nunca com corpo de request ou
 segredo no log).
 
+### 4.6 `sync` (spec `02-sync-pluggy`)
+
+`POST /sync` (chamado pelo cron externo, ADR 0005) lê contas e transações do item `PLUGGY_ITEM_ID` e
+grava `Conta`/`Transacao`, **somente leitura no Pluggy** (o `PluggyGateway` só expõe `listar*`; um
+teste varre o código atrás de qualquer chamada que não seja `fetch*`). É `@Public()` para o
+`AccessGuard` mas **não é aberta**: o `SyncTokenGuard` compara o header `x-sync-token` com
+`SYNC_CRON_TOKEN` em tempo constante (digests SHA-256). Idempotente por `pluggyTransactionId`;
+sync incremental com janela = data mais recente − 30 dias; só atualiza transação que mudou; uma
+execução por vez (409 `SYNC_EM_ANDAMENTO`). Toda execução grava um `SyncRun` (só o `code` do erro,
+nunca a mensagem do Pluggy). `GET /sync/status` (usuário) devolve o último `SyncRun`.
+
+**Dinheiro:** centavos inteiros via `domain/money/centavos.ts#reaisParaCentavos`; o mapeamento
+Pluggy → modelo vive em `domain/sync/mapear.ts` (puro). **O sinal vem do `type`, não do valor
+cru**: no Pluggy a conta corrente manda `DEBIT` negativo, mas o cartão manda a compra (`DEBIT`)
+positiva e o pagamento (`CREDIT`) negativa — verificado com dados reais agregados. Transação em moeda
+estrangeira usa `amountInAccountCurrency`; sem ele conta em `semConversao`.
+
 ## 5. Prisma e RLS
 
 - **Modelos hoje** (`schema.prisma`): `User` (usuário único, criado pelo seed) e `RefreshSession`
   (uma por login/dispositivo; `cliente: WEB | PWA` decide a TTL do refresh — spec
-  `01-fundacao-auth`, `ARCHITECTURE.md` §4.5). Nenhum model de domínio financeiro ainda (sync,
-  categorização, taxa de poupança entram com a spec de cada um).
+  `01-fundacao-auth`, `ARCHITECTURE.md` §4.5). `Conta`, `Transacao` e `SyncRun` (spec `02-sync-pluggy`, valores sempre em centavos `Int`). Categorização
+  e taxa de poupança entram com a spec de cada um.
 - `schema.prisma`: `datasource db` usa `DATABASE_URL` (pooler de transação, runtime) e
   `directUrl` com `DIRECT_URL` (pooler de sessão, só para `migrate`). O Prisma conecta como role
   `postgres` — RLS não afeta as queries da API; existe para fechar a Data API do Supabase (não
@@ -179,6 +195,6 @@ uma) em `.env.example`, na raiz.
 ## 8. O que falta documentar aqui
 
 Esta seção existe para não fingir completude: `01-fundacao-auth` já está documentada (§4.5, §5).
-Quando `02-sync-pluggy`, `03-categorizacao` e `04-taxa-de-poupanca` entrarem, cada uma ganha sua
+Quando `03-categorizacao` e `04-taxa-de-poupanca` entrarem, cada uma ganha sua
 própria seção aqui (módulo em `modules/`, model(s) em `schema.prisma`) — não assuma nenhuma delas
 como implícita até lá. `apps/web` também começa do zero (hoje é só placeholder).

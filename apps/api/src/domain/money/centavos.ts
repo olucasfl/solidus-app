@@ -21,3 +21,17 @@ export function formatarCentavosBRL(centavos: number): string {
 
   return `${negativo ? '-' : ''}R$ ${reais.toLocaleString('pt-BR')},${resto.toString().padStart(2, '0')}`;
 }
+
+/**
+ * Converte um valor em reais (decimal, como as APIs externas devolvem) para centavos inteiros,
+ * arredondando para o centavo mais próximo. É a única porta de entrada de dinheiro externo: NaN e
+ * infinito são erro de quem chamou, nunca um valor a "consertar".
+ */
+export function reaisParaCentavos(reais: number): number {
+  if (!Number.isFinite(reais)) {
+    throw new TypeError(`Valor em reais precisa ser finito, recebido ${reais}`);
+  }
+  // Deslocar a vírgula na string evita 1.005 * 100 = 100.49999... arredondar para baixo.
+  const centavos = Math.sign(reais) * Math.round(Number(`${Math.abs(reais).toFixed(10)}e2`));
+  return centavos === 0 ? 0 : centavos;
+}

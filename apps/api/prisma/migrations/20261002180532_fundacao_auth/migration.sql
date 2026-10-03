@@ -44,9 +44,14 @@ REVOKE ALL ON "User" FROM anon, authenticated;
 ALTER TABLE "RefreshSession" ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON "RefreshSession" FROM anon, authenticated;
 
--- Esta é a primeira migration do projeto: "_prisma_migrations" (tabela interna do Prisma Migrate,
--- não vem do schema.prisma) nasceu agora, com os grants padrão do Supabase para anon/authenticated
--- no schema public. pnpm db:check-rls olha toda tabela do schema public, não só as do schema.prisma
--- — sem isto ela fica sem RLS e com grant residual pra sempre, igual qualquer outra tabela.
-ALTER TABLE "_prisma_migrations" ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON "_prisma_migrations" FROM anon, authenticated;
+-- "_prisma_migrations" (tabela interna do Prisma Migrate, fora do schema.prisma) nasce com os grants
+-- padrão do Supabase e `pnpm db:check-rls` olha toda tabela do schema public. Condicional porque no
+-- shadow database do `migrate dev` ela ainda não existe nesse ponto.
+DO $$
+BEGIN
+  IF to_regclass('public._prisma_migrations') IS NOT NULL THEN
+    ALTER TABLE "_prisma_migrations" ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON "_prisma_migrations" FROM anon, authenticated;
+  END IF;
+END
+$$;

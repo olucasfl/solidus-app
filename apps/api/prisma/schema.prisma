@@ -55,3 +55,71 @@ model RefreshSession {
   @@index([userId])
   @@index([tokenHash])
 }
+
+// --- Sync com o Pluggy (spec 02-sync-pluggy). Dinheiro sempre em centavos (Int). ---
+
+enum TipoConta {
+  CORRENTE
+  POUPANCA
+  CARTAO
+}
+
+enum TipoTransacao {
+  DEBITO
+  CREDITO
+}
+
+enum StatusTransacao {
+  PENDENTE
+  EFETIVADA
+}
+
+enum StatusSync {
+  SUCESSO
+  FALHA
+}
+
+model Conta {
+  id              String      @id @default(uuid())
+  pluggyAccountId String      @unique
+  tipo            TipoConta
+  nome            String      @db.VarChar(120)
+  saldoCentavos   Int
+  moeda           String      @db.VarChar(3)
+  criadoEm        DateTime    @default(now())
+  atualizadoEm    DateTime    @updatedAt
+  transacoes      Transacao[]
+}
+
+model Transacao {
+  id                  String          @id @default(uuid())
+  pluggyTransactionId String          @unique
+  contaId             String
+  conta               Conta           @relation(fields: [contaId], references: [id], onDelete: Cascade)
+  data                DateTime
+  descricao           String          @db.VarChar(500)
+  // negativo = saída, positivo = entrada; o sinal vem do `type` do Pluggy, nunca do valor cru
+  valorCentavos       Int
+  tipo                TipoTransacao
+  status              StatusTransacao
+  moeda               String          @db.VarChar(3)
+  // dado auxiliar do Pluggy; a categoria do Solidus vem da spec 03-categorizacao
+  categoriaPluggy     String?         @db.VarChar(120)
+  criadoEm            DateTime        @default(now())
+  atualizadoEm        DateTime        @updatedAt
+
+  @@index([contaId, data])
+  @@index([data])
+}
+
+model SyncRun {
+  id                    String     @id @default(uuid())
+  iniciadoEm            DateTime   @default(now())
+  finalizadoEm          DateTime?
+  status                StatusSync
+  contas                Int        @default(0)
+  transacoesNovas       Int        @default(0)
+  transacoesAtualizadas Int        @default(0)
+  // só o code do erro (ex.: PLUGGY_INDISPONIVEL), nunca a mensagem do Pluggy
+  erro                  String?    @db.VarChar(60)
+}
