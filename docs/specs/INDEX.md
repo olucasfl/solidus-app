@@ -49,7 +49,18 @@ anterior:
 
 ## Pendências de execução humana
 
-Nenhuma pendência aberta.
+**Fase 1 (specs 01 a 04 implementadas; 02, 03 e 04 foram aprovadas pelo agente sob delegação):**
+
+- [ ] **Revisar as "Suposições" das specs 02, 03 e 04** — foram autoaprovadas; nenhuma humana ainda.
+- [ ] **Criar regras de categoria para as entradas.** Hoje toda transferência recebida cai em
+      `A_CLASSIFICAR` e a taxa de poupança sai `null` em quase todos os meses (o `ENTRADAS_A_CLASSIFICAR`
+      avisa isso). `POST /regras` com o nome do pagador do salário (`SALARIO`), depois
+      `POST /categorizacao/recalcular`. Sem isso a spec 04 não tem número útil.
+- [ ] **Mesclar as branches empilhadas, nesta ordem:** `docs/fecha-spec-01` → `feat/sync-pluggy` →
+      `feat/categorizacao` → `feat/taxa-de-poupanca` (cada uma parte da anterior). A migration
+      `fundacao_auth` que está na `main` tem um `ALTER` em `_prisma_migrations` que quebra o
+      `prisma migrate dev` (shadow database); a correção está em `feat/sync-pluggy`.
+- [ ] Agendar o `POST /sync` (Render Cron Job ou GitHub Actions, ADR 0005) — só quando houver deploy.
 
 Mudanças destrutivas de schema (`/db-change`) e outras aprovações explícitas exigidas por
 `.claude/rules/RULES.md` entram aqui quando existirem.
