@@ -92,24 +92,28 @@ model Conta {
 }
 
 model Transacao {
-  id                  String          @id @default(uuid())
-  pluggyTransactionId String          @unique
+  id                  String           @id @default(uuid())
+  pluggyTransactionId String           @unique
   contaId             String
-  conta               Conta           @relation(fields: [contaId], references: [id], onDelete: Cascade)
+  conta               Conta            @relation(fields: [contaId], references: [id], onDelete: Cascade)
   data                DateTime
-  descricao           String          @db.VarChar(500)
+  descricao           String           @db.VarChar(500)
   // negativo = saída, positivo = entrada; o sinal vem do `type` do Pluggy, nunca do valor cru
   valorCentavos       Int
   tipo                TipoTransacao
   status              StatusTransacao
-  moeda               String          @db.VarChar(3)
+  moeda               String           @db.VarChar(3)
   // dado auxiliar do Pluggy; a categoria do Solidus vem da spec 03-categorizacao
-  categoriaPluggy     String?         @db.VarChar(120)
-  criadoEm            DateTime        @default(now())
-  atualizadoEm        DateTime        @updatedAt
+  categoriaPluggy     String?          @db.VarChar(120)
+  // categoria do Solidus (id da taxonomia em packages/shared, validado no código) — spec 03
+  categoria           String?          @db.VarChar(40)
+  origemCategoria     OrigemCategoria?
+  criadoEm            DateTime         @default(now())
+  atualizadoEm        DateTime         @updatedAt
 
   @@index([contaId, data])
   @@index([data])
+  @@index([categoria])
 }
 
 model SyncRun {
@@ -122,4 +126,21 @@ model SyncRun {
   transacoesAtualizadas Int        @default(0)
   // só o code do erro (ex.: PLUGGY_INDISPONIVEL), nunca a mensagem do Pluggy
   erro                  String?    @db.VarChar(60)
+}
+
+// --- Categorização (spec 03-categorizacao) ---
+
+enum OrigemCategoria {
+  REGRA_USUARIO
+  REGRA_PADRAO
+  MANUAL
+}
+
+model RegraCategoria {
+  id         String         @id @default(uuid())
+  padrao     String         @db.VarChar(120)
+  categoria  String         @db.VarChar(40)
+  tipo       TipoTransacao?
+  prioridade Int            @default(0)
+  criadoEm   DateTime       @default(now())
 }

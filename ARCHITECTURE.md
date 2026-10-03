@@ -7,14 +7,14 @@ visão/decisões de produto; aqui é só o "como o código está organizado".
 ## 1. Estado atual (vale mais que qualquer resumo — confira a data do último commit)
 
 **Existe:** monorepo pnpm, ESLint 9 (flat) + Prettier + Husky + lint-staged + commitlint,
-`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `auth` — usuário único via seed, login, refresh rotativo,
+`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao` e `transacoes`; `auth` — usuário único via seed, login, refresh rotativo,
 logout, `me`; guard global validando o access token de verdade; `ValidationPipe` global, filtro de
 exceção, helmet, CORS, throttler básico com limite próprio no login), `packages/shared` (tipos
 `Centavos`/`CategoriaId`/contrato de auth), Prisma com os models `User`/`RefreshSession` (spec
-`01-fundacao-auth`) e `Conta`/`Transacao`/`SyncRun` (spec `02-sync-pluggy`), Jest configurado com teste de domínio, de DTO, de guard e e2e de `/health` e
+`01-fundacao-auth`) e `Conta`/`Transacao`/`SyncRun`/`RegraCategoria` (specs `02-sync-pluggy` e `03-categorizacao`), Jest configurado com teste de domínio, de DTO, de guard e e2e de `/health` e
 `/auth/*`. Scripts de spike do Pluggy em `apps/api/scripts/spike/`.
 
-**Não existe:** `apps/web` (só placeholder), categorização, taxa de poupança, CI/CD, deploy. Cada um entra com sua própria spec
+**Não existe:** `apps/web` (só placeholder), taxa de poupança, CI/CD, deploy. Cada um entra com sua própria spec
 (`docs/specs/INDEX.md`).
 
 ## 2. Workspaces
@@ -154,6 +154,26 @@ cru**: no Pluggy a conta corrente manda `DEBIT` negativo, mas o cartão manda a 
 positiva e o pagamento (`CREDIT`) negativa — verificado com dados reais agregados. Transação em moeda
 estrangeira usa `amountInAccountCurrency`; sem ele conta em `semConversao`.
 
+### 4.7 `categorizacao` e `transacoes` (spec `03-categorizacao`)
+
+A taxonomia é **fechada e vive em `packages/shared/src/categoria.ts`** (22 categorias, cada uma com
+`natureza`: RECEITA, DESPESA, NEUTRA ou INDEFINIDA — é isso que a taxa de poupança usa). A
+categorização é regra pura em `domain/categorizacao/` (substring sem acento/caixa, **nunca regex**).
+Precedência: manual > regra do usuário (`RegraCategoria`, prioridade desc, empate = mais antiga) >
+regra padrão > fallback (débito → `OUTRAS_DESPESAS`, crédito → `A_CLASSIFICAR`).
+
+**Regras por descrição vêm antes do mapa de categorias do Pluggy**, porque o Pluggy classifica o
+"Pagamento de fatura" da conta corrente como `Transfers` (contaria a fatura duas vezes como
+despesa). Crédito `Transfers` vai para `A_CLASSIFICAR` de propósito: salário, reembolso e dinheiro
+de outra conta própria não são distinguíveis sem regra do usuário — o sistema não adivinha receita.
+
+Persistência: `Transacao.categoria` (String validada contra a taxonomia) + `origemCategoria`
+(`REGRA_USUARIO`, `REGRA_PADRAO`, `MANUAL`). Transações novas são categorizadas ao fim de cada sync
+(falha aí é logada e não derruba o sync); `POST /categorizacao/recalcular` reaplica as regras em
+tudo que não é manual (criar/apagar regra não recalcula sozinho). Rotas, todas autenticadas:
+`GET /categorias`, `GET/POST /regras`, `DELETE /regras/:id`, `POST /categorizacao/recalcular`,
+`GET /transacoes` (filtros `mes`, `categoria`; paginação), `PATCH /transacoes/:id/categoria`.
+
 ## 5. Prisma e RLS
 
 - **Modelos hoje** (`schema.prisma`): `User` (usuário único, criado pelo seed) e `RefreshSession`
@@ -194,7 +214,6 @@ uma) em `.env.example`, na raiz.
 
 ## 8. O que falta documentar aqui
 
-Esta seção existe para não fingir completude: `01-fundacao-auth` já está documentada (§4.5, §5).
-Quando `03-categorizacao` e `04-taxa-de-poupanca` entrarem, cada uma ganha sua
-própria seção aqui (módulo em `modules/`, model(s) em `schema.prisma`) — não assuma nenhuma delas
-como implícita até lá. `apps/web` também começa do zero (hoje é só placeholder).
+Esta seção existe para não fingir completude: as specs `01` a `03` já estão documentadas (§4.5 a §4.7, §5).
+Quando `04-taxa-de-poupanca` entrar, ela ganha sua própria seção aqui (módulo em `modules/`, regra em
+`domain/`) — não assuma que ela existe até lá. `apps/web` também começa do zero (hoje é só placeholder).

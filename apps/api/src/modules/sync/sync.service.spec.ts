@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { type ContaPluggy, type TransacaoPluggy } from '../../domain/sync/mapear';
 import { type EnvironmentVariables } from '../../config/env.validation';
 import { PrismaService } from '../../database/prisma.service';
+import { type CategorizacaoService } from '../categorizacao/categorizacao.service';
 import { PluggyGateway, PluggySdkGateway } from './pluggy.gateway';
 import {
   PluggyIndisponivelError,
@@ -52,12 +53,14 @@ function montar(itemId: string | undefined = 'item-1') {
     listarTransacoes: jest.fn().mockResolvedValue([]),
   };
   const config = { get: jest.fn().mockReturnValue(itemId) };
+  const categorizacao = { categorizarPendentes: jest.fn().mockResolvedValue(0) };
   const service = new SyncService(
     prisma as unknown as PrismaService,
     gateway as unknown as PluggyGateway,
     config as unknown as ConfigService<EnvironmentVariables, true>,
+    categorizacao as unknown as CategorizacaoService,
   );
-  return { prisma, gateway, service };
+  return { prisma, gateway, categorizacao, service };
 }
 
 describe('SyncService.sincronizar', () => {
@@ -186,6 +189,15 @@ describe('SyncService.sincronizar', () => {
     expect(prisma.syncRun.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ status: 'FALHA', erro: 'ERRO_INTERNO' }),
     });
+  });
+
+  it('CA-15: categoriza as pendentes ao fim; se a categorização falhar, o sync segue 200', async () => {
+    const { categorizacao, service } = montar();
+    await service.sincronizar();
+    expect(categorizacao.categorizarPendentes).toHaveBeenCalledTimes(1);
+
+    categorizacao.categorizarPendentes.mockRejectedValue(new Error('detalhe interno'));
+    await expect(service.sincronizar()).resolves.toMatchObject({ contas: 1 });
   });
 
   it('CA-12: sem PLUGGY_ITEM_ID responde 503 e não chama o gateway', async () => {

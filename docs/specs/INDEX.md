@@ -8,7 +8,7 @@ commit — `/docs-sync` confere se ela bate com a realidade.
 | ------------------------ | ------------------------------------------------------------- | --------------- |
 | Fundação e autenticação  | [01-fundacao-auth.md](01-fundacao-auth.md)                    | ✅ implementada |
 | Sync com o Pluggy        | [02-sync-pluggy.md](02-sync-pluggy.md)                        | ✅ implementada |
-| Categorização por regras | [03-categorizacao.md](03-categorizacao.md) (a escrever)       | 📋 prevista     |
+| Categorização por regras | [03-categorizacao.md](03-categorizacao.md)                    | ✅ implementada |
 | Taxa de poupança         | [04-taxa-de-poupanca.md](04-taxa-de-poupanca.md) (a escrever) | 📋 prevista     |
 
 ## Legenda de status

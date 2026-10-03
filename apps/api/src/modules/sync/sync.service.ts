@@ -3,6 +3,7 @@ import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type EnvironmentVariables } from '../../config/env.validation';
 import { PrismaService } from '../../database/prisma.service';
+import { CategorizacaoService } from '../categorizacao/categorizacao.service';
 import { mapearConta, mapearTransacao, type TransacaoMapeada } from '../../domain/sync/mapear';
 import { SYNC_JANELA_SOBREPOSICAO_DIAS } from './sync.constants';
 import { PluggyGateway } from './pluggy.gateway';
@@ -40,6 +41,7 @@ export class SyncService {
     private readonly prisma: PrismaService,
     private readonly gateway: PluggyGateway,
     private readonly config: ConfigService<EnvironmentVariables, true>,
+    private readonly categorizacao: CategorizacaoService,
   ) {}
 
   async sincronizar(): Promise<SyncResponse> {
@@ -62,6 +64,7 @@ export class SyncService {
 
     try {
       await this.executar(itemId, contadores);
+      await this.categorizarSemDerrubar();
       await this.registrar(iniciadoEm, 'SUCESSO', contadores);
       return { ...contadores, duracaoMs: Date.now() - iniciadoEm.getTime() };
     } catch (error) {
@@ -71,6 +74,15 @@ export class SyncService {
       throw error;
     } finally {
       this.emAndamento = false;
+    }
+  }
+
+  /** Os dados do Pluggy já estão gravados: falhar ao categorizar não pode derrubar o sync (spec 03). */
+  private async categorizarSemDerrubar(): Promise<void> {
+    try {
+      await this.categorizacao.categorizarPendentes();
+    } catch (error) {
+      this.logger.error(`Falha ao categorizar (${error instanceof Error ? error.name : 'erro'})`);
     }
   }
 
