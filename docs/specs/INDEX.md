@@ -4,12 +4,13 @@ Mapa único de `spec ↔ status`. **Este arquivo é a fonte da verdade sobre o q
 confie em adivinhar nome de arquivo. Quem cria ou fecha uma spec atualiza esta tabela no mesmo
 commit — `/docs-sync` confere se ela bate com a realidade.
 
-| Feature                  | Spec                                             | Status          |
-| ------------------------ | ------------------------------------------------ | --------------- |
-| Fundação e autenticação  | [01-fundacao-auth.md](01-fundacao-auth.md)       | ✅ implementada |
-| Sync com o Pluggy        | [02-sync-pluggy.md](02-sync-pluggy.md)           | ✅ implementada |
-| Categorização por regras | [03-categorizacao.md](03-categorizacao.md)       | ✅ implementada |
-| Taxa de poupança         | [04-taxa-de-poupanca.md](04-taxa-de-poupanca.md) | ✅ implementada |
+| Feature                  | Spec                                                 | Status          |
+| ------------------------ | ---------------------------------------------------- | --------------- |
+| Fundação e autenticação  | [01-fundacao-auth.md](01-fundacao-auth.md)           | ✅ implementada |
+| Sync com o Pluggy        | [02-sync-pluggy.md](02-sync-pluggy.md)               | ✅ implementada |
+| Categorização por regras | [03-categorizacao.md](03-categorizacao.md)           | ✅ implementada |
+| Taxa de poupança         | [04-taxa-de-poupanca.md](04-taxa-de-poupanca.md)     | ✅ implementada |
+| Carteira por Caixinha    | [05-carteira-caixinhas.md](05-carteira-caixinhas.md) | 📝 rascunho     |
 
 ## Legenda de status
 
@@ -60,6 +61,9 @@ anterior:
       `feat/categorizacao` → `feat/taxa-de-poupanca` (cada uma parte da anterior). A migration
       `fundacao_auth` que está na `main` tem um `ALTER` em `_prisma_migrations` que quebra o
       `prisma migrate dev` (shadow database); a correção está em `feat/sync-pluggy`.
+- [ ] **Responder as 5 questões em aberto da spec `05-carteira-caixinhas`** (rascunho, nada implementado):
+      % do CDI de cada Caixinha, imposto bruto×líquido, aportes/resgates, arredondamento, "Gastos".
+- [ ] No deploy, **medir o `TRUST_PROXY_HOPS`** (ARCHITECTURE.md §7) — sem isso o limite de tentativas é global.
 - [ ] Agendar o `POST /sync` (Render Cron Job ou GitHub Actions, ADR 0005) — só quando houver deploy.
 
 Mudanças destrutivas de schema (`/db-change`) e outras aprovações explícitas exigidas por
