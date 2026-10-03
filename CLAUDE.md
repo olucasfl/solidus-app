@@ -58,13 +58,14 @@ Definições em `.claude/commands/`; agentes em `.claude/agents/` (`bug-fixer`, 
 
 ## O que existe e o que ainda não existe
 
-**Existe:** monorepo (pnpm, ESLint 9, Prettier, Husky, commitlint), backend NestJS com
-`ConfigModule` validando env no boot, `PrismaModule`/`PrismaService` (sem models de negócio
-ainda), guard global "nega por padrão" (`@Public()` só em `GET /health`), `ValidationPipe` global,
-filtro de exceção, helmet, CORS restrito a `WEB_ORIGIN`, rate limit básico, Jest configurado
-(1 teste de domínio, 1 e2e de `/health`), os scripts de spike do Pluggy
-(`apps/api/scripts/spike/`). `apps/web` é só um placeholder.
+**Existe (Fase 1 completa, specs 01 a 04 em `docs/specs/INDEX.md`):** monorepo (pnpm, ESLint 9,
+Prettier, Husky, commitlint); backend NestJS com env validado no boot, guard global "nega por padrão"
+que agora valida o access token (JWT), Prisma com `User`, `RefreshSession`, `Conta`, `Transacao`,
+`SyncRun` e `RegraCategoria` (todas com RLS); auth do usuário único (login, refresh rotativo em cookie,
+logout, `me`); `POST /sync` do Pluggy (só leitura, protegido por `SYNC_CRON_TOKEN`); categorização por
+regras com taxonomia fechada; taxa de poupança mensal e histórico; Jest (unitário e e2e com Prisma
+mockado). `apps/web` é só um placeholder.
 
-**Ainda não existe:** qualquer rota de negócio (auth, sync, categorização, taxa de poupança —
-cada uma é uma spec própria, a primeira é `01-fundacao-auth`), qualquer model Prisma, qualquer
-módulo além de `health`, frontend, CI/CD, deploy. Não assuma nenhum desses como implícito.
+**Ainda não existe:** frontend, Fase 2 em diante (carteira por Caixinha, comparador, reserva,
+envelopes, política de gasto, chat), CI/CD, deploy, agendador do sync. Não assuma nenhum desses
+como implícito.

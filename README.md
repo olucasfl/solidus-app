@@ -32,9 +32,25 @@ já acessível antes de rodar `dev`/`db:migrate`.
 | `pnpm db:generate`             | `prisma generate` (lê o `.env` da raiz via `dotenv-cli`)                                            |
 | `pnpm db:migrate`              | `prisma migrate dev` — gera migration versionada                                                    |
 | `pnpm db:deploy`               | `prisma migrate deploy` — aplica migrations pendentes sem gerar nova                                |
-| `pnpm db:seed`                 | roda `apps/api/prisma/seed.ts` (hoje é um stub — ver spec `01-fundacao-auth`)                       |
+| `pnpm db:seed`                 | cria/atualiza o usuário único a partir de `SEED_USER_*` (idempotente; é também como trocar a senha) |
 | `pnpm db:check-rls`            | falha se alguma tabela do schema `public` estiver sem RLS, ou com grant para `anon`/`authenticated` |
 | `pnpm db:studio`               | abre o Prisma Studio                                                                                |
+
+## Rotas da API (Fase 1)
+
+Tudo exige `Authorization: Bearer <accessToken>`, exceto `GET /health`, `POST /auth/login`,
+`POST /auth/refresh` e `POST /sync` (esta usa o header `x-sync-token`). Detalhe e erros em cada spec.
+
+| Rota                                                                                          | O que faz                                       | Spec |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---- |
+| `POST /auth/login`, `/auth/refresh`, `/auth/logout`, `GET /auth/me`                           | sessão do usuário único                         | 01   |
+| `POST /sync`, `GET /sync/status`                                                              | puxa contas e transações do Pluggy (só leitura) | 02   |
+| `GET /categorias`, `GET/POST /regras`, `DELETE /regras/:id`, `POST /categorizacao/recalcular` | categorização por regras                        | 03   |
+| `GET /transacoes`, `PATCH /transacoes/:id/categoria`                                          | listar e corrigir categoria                     | 03   |
+| `GET /poupanca?mes=YYYY-MM`, `GET /poupanca/historico?meses=N`                                | taxa de poupança                                | 04   |
+
+Para rodar contra o Pluggy de verdade: suba a API (`pnpm dev`), faça login, e chame
+`POST /sync` com o `SYNC_CRON_TOKEN` do `.env`.
 
 ## Como rodar o spike do Pluggy
 
@@ -64,7 +80,7 @@ apps/
   api/      NestJS 11 + Prisma 6 — único backend hoje
   web/      React + Vite PWA — pendente, começa depois do backend
 packages/
-  shared/   tipos TypeScript compartilhados (Centavos, CategoriaId)
+  shared/   contratos TypeScript compartilhados (auth, sync, categorias, poupança)
 docs/
   produto.md         visão, decisões fechadas, achado do spike
   decisions/          um ADR por decisão de arquitetura
