@@ -7,14 +7,14 @@ visão/decisões de produto; aqui é só o "como o código está organizado".
 ## 1. Estado atual (vale mais que qualquer resumo — confira a data do último commit)
 
 **Existe:** monorepo pnpm, ESLint 9 (flat) + Prettier + Husky + lint-staged + commitlint,
-`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao` e `transacoes`; `auth` — usuário único via seed, login, refresh rotativo,
+`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes` e `poupanca`; `auth` — usuário único via seed, login, refresh rotativo,
 logout, `me`; guard global validando o access token de verdade; `ValidationPipe` global, filtro de
 exceção, helmet, CORS, throttler básico com limite próprio no login), `packages/shared` (tipos
 `Centavos`/`CategoriaId`/contrato de auth), Prisma com os models `User`/`RefreshSession` (spec
 `01-fundacao-auth`) e `Conta`/`Transacao`/`SyncRun`/`RegraCategoria` (specs `02-sync-pluggy` e `03-categorizacao`), Jest configurado com teste de domínio, de DTO, de guard e e2e de `/health` e
 `/auth/*`. Scripts de spike do Pluggy em `apps/api/scripts/spike/`.
 
-**Não existe:** `apps/web` (só placeholder), taxa de poupança, CI/CD, deploy. Cada um entra com sua própria spec
+**Não existe:** `apps/web` (só placeholder), qualquer coisa da Fase 2 em diante, CI/CD, deploy. Cada um entra com sua própria spec
 (`docs/specs/INDEX.md`).
 
 ## 2. Workspaces
@@ -174,6 +174,17 @@ tudo que não é manual (criar/apagar regra não recalcula sozinho). Rotas, toda
 `GET /categorias`, `GET/POST /regras`, `DELETE /regras/:id`, `POST /categorizacao/recalcular`,
 `GET /transacoes` (filtros `mes`, `categoria`; paginação), `PATCH /transacoes/:id/categoria`.
 
+### 4.8 `poupanca` (spec `04-taxa-de-poupanca`)
+
+`GET /poupanca?mes=YYYY-MM` e `GET /poupanca/historico?meses=N` (1–24, padrão 6), autenticadas, sem
+mudança de schema: o service agrupa `Transacao` por `(categoria, tipo)` no mês (calendário **UTC**) e
+a conta inteira é a função pura `domain/poupanca/calcular.ts`. `taxa = (receitas − despesas) /
+receitas`, em pontos-base inteiros (sem float no contrato); só categorias de natureza RECEITA e
+DESPESA entram — NEUTRA (fatura, aporte, transferência própria) fica fora, estorno reduz a despesa.
+**INDEFINIDA e sem categoria são reportadas à parte (`indefinidas`) e geram aviso
+`ENTRADAS_A_CLASSIFICAR`; receita zero devolve taxa `null` + `SEM_RECEITA`** — o número nunca é
+apresentado como confiável quando não é.
+
 ## 5. Prisma e RLS
 
 - **Modelos hoje** (`schema.prisma`): `User` (usuário único, criado pelo seed) e `RefreshSession`
@@ -201,10 +212,11 @@ tudo que não é manual (criar/apagar regra não recalcula sozinho). Rotas, toda
 
 ## 6. `packages/shared`
 
-Só tipos/contratos, sem lógica e sem nada específico de Node ou browser (`window`, `fs`,
-`@prisma/client` ficam de fora). Hoje: `Centavos` (alias de `number`, inteiro) e `CategoriaId`
-(alias de `string` — a taxonomia real de categorias é decisão da spec `03-categorizacao`, não
-antecipada aqui). Cresce conforme `apps/web` precisar do mesmo shape que `apps/api` expõe.
+Contratos, sem nada específico de Node ou browser (`window`, `fs`, `@prisma/client` ficam de fora).
+Hoje: `Centavos`; o contrato de auth, sync, transações/regras e poupança; e a **taxonomia fechada de
+categorias** (`CATEGORIAS`, `CategoriaId`, `naturezaDe` — a única exceção "com lógica": uma tabela
+constante e dois helpers puros, porque API e web precisam da mesma lista). Cresce conforme `apps/web`
+precisar do mesmo shape que `apps/api` expõe.
 
 ## 7. Variáveis de ambiente
 
@@ -214,6 +226,6 @@ uma) em `.env.example`, na raiz.
 
 ## 8. O que falta documentar aqui
 
-Esta seção existe para não fingir completude: as specs `01` a `03` já estão documentadas (§4.5 a §4.7, §5).
-Quando `04-taxa-de-poupanca` entrar, ela ganha sua própria seção aqui (módulo em `modules/`, regra em
-`domain/`) — não assuma que ela existe até lá. `apps/web` também começa do zero (hoje é só placeholder).
+Esta seção existe para não fingir completude: as specs `01` a `04` (toda a Fase 1) já estão documentadas (§4.5 a §4.8, §5).
+A Fase 2 (investimentos manuais por Caixinha, comparador, reserva) começa com specs novas — não assuma
+nenhuma delas como existente. `apps/web` também começa do zero (hoje é só placeholder).
