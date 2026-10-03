@@ -1,5 +1,6 @@
 import { type INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { type NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { createValidationPipe } from './common/pipes/validation.pipe';
@@ -12,6 +13,14 @@ import { type EnvironmentVariables } from './config/env.validation';
  */
 export function setupApp(app: INestApplication): void {
   const config = app.get<ConfigService<EnvironmentVariables, true>>(ConfigService);
+
+  // Atrás de proxy o `req.ip` seria o do proxy e o limite por IP viraria um contador único para o site
+  // inteiro. Um NÚMERO de saltos (nunca `true`): o Express só olha os últimos N endereços do
+  // `X-Forwarded-For`, então um cabeçalho forjado pelo cliente não escapa do limite.
+  (app as NestExpressApplication).set(
+    'trust proxy',
+    config.get('TRUST_PROXY_HOPS', { infer: true }) ?? 0,
+  );
 
   app.use(helmet());
 

@@ -224,6 +224,13 @@ Validadas no boot por `apps/api/src/config/env.validation.ts` — falha rápido,
 nome da variável com problema, nunca o valor. Lista completa (com comentário do propósito de cada
 uma) em `.env.example`, na raiz.
 
+**`TRUST_PROXY_HOPS`** (opcional, 0–10, ausente = 0): quantos proxies confiáveis existem entre o cliente e
+a API. Em dev fica ausente. No deploy (Render etc.) o `req.ip` seria o do proxy e o limite por IP
+(login 5/min, `/sync` 5/min) viraria um contador único para o site todo — por isso o valor tem de ser
+**medido** na hospedagem real (comparar o IP real com o `X-Forwarded-For` recebido), nunca chutado e
+nunca `true` (confiaria em qualquer cabeçalho e deixaria o IP forjável). Teste de regressão em
+`app.setup.trust-proxy.e2e.spec.ts`.
+
 ## 8. O que falta documentar aqui
 
 Esta seção existe para não fingir completude: as specs `01` a `04` (toda a Fase 1) já estão documentadas (§4.5 a §4.8, §5).

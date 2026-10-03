@@ -98,6 +98,18 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   OPENAI_API_KEY?: string;
+
+  /**
+   * Quantos proxies CONFIÁVEIS há entre o cliente e a API (ex.: Render). Ausente = 0: o
+   * `X-Forwarded-For` é ignorado e o `req.ip` é o do socket (dev, sem proxy). Menor que o real deixa o
+   * limite por IP quebrado (todo mundo com o IP do proxy); maior deixa o cabeçalho forjável. Por isso é
+   * um número MEDIDO no deploy, nunca `true` (confiaria em qualquer cabeçalho).
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  TRUST_PROXY_HOPS?: number;
 }
 
 /** Regras que envolvem mais de uma variável, fora do alcance de um decorator só. */
