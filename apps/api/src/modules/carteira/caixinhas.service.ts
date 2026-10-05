@@ -28,14 +28,18 @@ function paraDate(data: string): Date {
 export class CaixinhasService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listar(): Promise<Caixinha[]> {
-    const caixinhas = await this.prisma.caixinha.findMany({ orderBy: { criadoEm: 'asc' } });
+  async listar(userId: string): Promise<Caixinha[]> {
+    const caixinhas = await this.prisma.caixinha.findMany({
+      where: { userId },
+      orderBy: { criadoEm: 'asc' },
+    });
     return caixinhas.map((c) => this.paraCaixinha(c));
   }
 
-  async criar(dto: CriarCaixinhaDto): Promise<Caixinha> {
+  async criar(userId: string, dto: CriarCaixinhaDto): Promise<Caixinha> {
     const criada = await this.prisma.caixinha.create({
       data: {
+        userId,
         nome: dto.nome,
         percentualCdiBp: dto.percentualCdiBp,
         reservaDeGastos: dto.reservaDeGastos ?? false,
@@ -45,10 +49,10 @@ export class CaixinhasService {
     return this.paraCaixinha(criada);
   }
 
-  async atualizar(id: string, dto: AtualizarCaixinhaDto): Promise<Caixinha> {
-    await this.exigirCaixinha(id);
+  async atualizar(userId: string, id: string, dto: AtualizarCaixinhaDto): Promise<Caixinha> {
+    await this.exigirCaixinha(userId, id);
     const atualizada = await this.prisma.caixinha.update({
-      where: { id },
+      where: { id, userId },
       data: {
         ...(dto.nome !== undefined && { nome: dto.nome }),
         ...(dto.percentualCdiBp !== undefined && { percentualCdiBp: dto.percentualCdiBp }),
@@ -63,29 +67,33 @@ export class CaixinhasService {
   }
 
   /** Apaga a Caixinha e (em cascata) os movimentos dela. */
-  async remover(id: string): Promise<void> {
-    const { count } = await this.prisma.caixinha.deleteMany({ where: { id } });
+  async remover(userId: string, id: string): Promise<void> {
+    const { count } = await this.prisma.caixinha.deleteMany({ where: { id, userId } });
     if (count === 0) {
       throw new CaixinhaNaoEncontradaError();
     }
   }
 
-  async listarMovimentos(caixinhaId: string): Promise<MovimentoCaixinha[]> {
-    await this.exigirCaixinha(caixinhaId);
+  async listarMovimentos(userId: string, caixinhaId: string): Promise<MovimentoCaixinha[]> {
+    await this.exigirCaixinha(userId, caixinhaId);
     const movimentos = await this.prisma.movimentoCaixinha.findMany({
-      where: { caixinhaId },
+      where: { caixinhaId, userId },
       orderBy: [{ data: 'asc' }, { criadoEm: 'asc' }],
     });
     return movimentos.map((m) => this.paraMovimento(m));
   }
 
-  async criarMovimento(caixinhaId: string, dto: CriarMovimentoRequest): Promise<MovimentoCaixinha> {
-    await this.exigirCaixinha(caixinhaId);
+  async criarMovimento(
+    userId: string,
+    caixinhaId: string,
+    dto: CriarMovimentoRequest,
+  ): Promise<MovimentoCaixinha> {
+    await this.exigirCaixinha(userId, caixinhaId);
     this.validarDatas(dto);
 
     let valor = dto.valorCentavos;
     if (dto.transacaoId !== undefined) {
-      valor = await this.validarVinculo(dto, valor);
+      valor = await this.validarVinculo(userId, dto, valor);
     }
     if (valor === undefined) {
       throw dadoInvalido('VALOR_OBRIGATORIO', 'valorCentavos é obrigatório sem transacaoId.');
@@ -96,6 +104,7 @@ export class CaixinhasService {
 
     const criado = await this.prisma.movimentoCaixinha.create({
       data: {
+        userId,
         caixinhaId,
         tipo: dto.tipo,
         data: paraDate(dto.data),
@@ -107,8 +116,8 @@ export class CaixinhasService {
     return this.paraMovimento(criado);
   }
 
-  async removerMovimento(id: string): Promise<void> {
-    const { count } = await this.prisma.movimentoCaixinha.deleteMany({ where: { id } });
+  async removerMovimento(userId: string, id: string): Promise<void> {
+    const { count } = await this.prisma.movimentoCaixinha.deleteMany({ where: { id, userId } });
     if (count === 0) {
       throw new MovimentoNaoEncontradoError();
     }
@@ -118,12 +127,17 @@ export class CaixinhasService {
    * Aplicações/resgates do sync ainda sem Caixinha. O Pluggy não diz de qual Caixinha é (a descrição
    * não traz o nome), então não dá para atribuir sozinho: o sistema sugere, o usuário escolhe.
    */
-  async sugestoes(desde: string): Promise<SugestaoMovimento[]> {
+  async sugestoes(userId: string, desde: string): Promise<SugestaoMovimento[]> {
     if (!ehDataIso(desde)) {
       throw dadoInvalido('DATA_INVALIDA', 'desde deve ser uma data YYYY-MM-DD válida.');
     }
     const transacoes = await this.prisma.transacao.findMany({
-      where: { categoria: 'INVESTIMENTO', data: { gte: paraDate(desde) }, movimentoCaixinha: null },
+      where: {
+        userId,
+        categoria: 'INVESTIMENTO',
+        data: { gte: paraDate(desde) },
+        movimentoCaixinha: null,
+      },
       orderBy: { data: 'desc' },
       take: LIMITE_SUGESTOES,
     });
@@ -159,11 +173,13 @@ export class CaixinhasService {
 
   /** Confere a transação vinculada e devolve o valor a usar (o informado, ou o módulo dela). */
   private async validarVinculo(
+    userId: string,
     dto: CriarMovimentoRequest,
     valorInformado: number | undefined,
   ): Promise<number> {
-    const transacao = await this.prisma.transacao.findUnique({
-      where: { id: dto.transacaoId },
+    // Só a transação do PRÓPRIO usuário: o id de outra pessoa é tratado como inexistente.
+    const transacao = await this.prisma.transacao.findFirst({
+      where: { id: dto.transacaoId, userId },
       include: { movimentoCaixinha: { select: { id: true } } },
     });
     if (!transacao || transacao.categoria !== 'INVESTIMENTO') {
@@ -184,8 +200,11 @@ export class CaixinhasService {
     return valorInformado ?? Math.abs(transacao.valorCentavos);
   }
 
-  private async exigirCaixinha(id: string): Promise<void> {
-    const existe = await this.prisma.caixinha.findUnique({ where: { id }, select: { id: true } });
+  private async exigirCaixinha(userId: string, id: string): Promise<void> {
+    const existe = await this.prisma.caixinha.findFirst({
+      where: { id, userId },
+      select: { id: true },
+    });
     if (!existe) {
       throw new CaixinhaNaoEncontradaError();
     }

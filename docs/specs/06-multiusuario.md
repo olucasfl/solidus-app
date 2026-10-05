@@ -1,8 +1,8 @@
 # Spec: Multiusuário (o Solidus como app para outras pessoas)
 
-> Status: **rascunho — BLOQUEADA, aguarda um "sim" explícito do humano.** Nada foi implementado nem
-> alterado. Motivo: esta spec contraria uma regra permanente (`RULES.md` §3) e uma decisão fechada
-> (`docs/produto.md`); o agente não pode revogá-las sozinho (`RULES.md` §13).
+> Status: **etapa 1 implementada; etapas 2–5 bloqueadas.** Em 2026-10-05 o humano aprovou ("Sim, pode
+> alterar") os itens 1 e 2 abaixo — `RULES.md` §3 e `docs/produto.md` já foram alterados. Os itens 3
+> (`userId` obrigatório, `RULES.md` §6) e 4 (provedor de e-mail, `RULES.md` §12) seguem aguardando "sim".
 
 ## Origem
 
@@ -114,7 +114,22 @@ pessoas (família); `PLUGGY_COMERCIAL` (decisão de negócio).
 
 ## Questões em aberto
 
-- [ ] **"Sim" do humano** para os itens 1–2 (e, mais tarde, 3–4).
+- [x] "Sim" do humano para os itens 1–2 (2026-10-05). Faltam os itens 3–4.
 - [ ] Provedor de e-mail transacional.
 - [ ] O Solidus vai ser cobrado? Se sim, a fonte `PLUGGY_COMERCIAL` (R$ 2.500/mês+) entra no modelo de
       negócio; se não, `PLUGGY_PROPRIO` + `IMPORTACAO_ARQUIVO` bastam.
+
+## Etapa 1 — implementada (2026-10-05)
+
+`userId` opcional + `papel` (`ADMIN`) em `User`, migration `multiusuario_dono_dos_dados` com backfill
+(tudo que existia ficou com o usuário do seed). Todo service de dado do usuário recebe o `userId` da
+sessão (`@UserId()`, lê o `sub` do access token) como primeiro parâmetro e o põe em todo
+`where`/`data`; recurso de outro usuário dá 404. `PUT /impostos/:tipo` exige `AdminGuard` (lê o
+`papel` no banco; 403 `ACESSO_NEGADO`). O sync continua com a credencial do `.env`, gravando no nome
+do usuário `SEED_USER_EMAIL` (transitório até a etapa 3).
+
+Verificação: `isolamento.spec.ts` varre o código e falha se uma chamada a
+`conta|transacao|syncRun|regraCategoria|caixinha|movimentoCaixinha` não mencionar `userId`
+(exceção explícita e justificada: o CDI, que é dado público); cada service tem asserções com o
+`userId` em todo `where`/`data`; o e2e de impostos cobre o 403. Não foi feita checagem com um segundo
+usuário no banco real (bloqueada por segurança): fica para quando houver cadastro (etapa 2).

@@ -29,7 +29,7 @@ export class CarteiraService {
    * (best effort, com tempo máximo de espera): se o BCB falhar, responde com o que já tem e o aviso
    * `CDI_DEFASADO`. Só leitura para o usuário.
    */
-  async consultar(data?: string): Promise<Carteira> {
+  async consultar(userId: string, data?: string): Promise<Carteira> {
     const ate = data ?? hojeUtc();
     if (!ehDataIso(ate)) {
       throw dadoInvalido('DATA_INVALIDA', 'data deve ser uma data YYYY-MM-DD válida.');
@@ -42,6 +42,7 @@ export class CarteiraService {
 
     const [caixinhas, cdiDias, iof, ir] = await Promise.all([
       this.prisma.caixinha.findMany({
+        where: { userId },
         orderBy: { criadoEm: 'asc' },
         include: { movimentos: { orderBy: [{ data: 'asc' }, { criadoEm: 'asc' }] } },
       }),
@@ -106,9 +107,9 @@ export class CarteiraService {
    * O app se confere com os saldos que o usuário JÁ informou: para cada par de saldos consecutivos,
    * compara o que estimaria com o que ele informou, nas duas convenções, e sugere a que erra menos.
    */
-  async conferir(caixinhaId: string): Promise<ConferenciaCaixinha> {
-    const caixinha = await this.prisma.caixinha.findUnique({
-      where: { id: caixinhaId },
+  async conferir(userId: string, caixinhaId: string): Promise<ConferenciaCaixinha> {
+    const caixinha = await this.prisma.caixinha.findFirst({
+      where: { id: caixinhaId, userId },
       include: { movimentos: { orderBy: [{ data: 'asc' }, { criadoEm: 'asc' }] } },
     });
     if (!caixinha) {

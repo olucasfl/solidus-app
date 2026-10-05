@@ -13,6 +13,8 @@ import {
 } from './sync-errors';
 import { SyncService } from './sync.service';
 
+const U = 'u1';
+
 const CONTA_CORRENTE: ContaPluggy = {
   id: 'pl-conta-1',
   type: 'BANK',
@@ -39,7 +41,11 @@ function tx(id: string, parcial: Partial<TransacaoPluggy> = {}): TransacaoPluggy
 
 function montar(itemId: string | undefined = 'item-1') {
   const prisma = {
-    conta: { upsert: jest.fn().mockResolvedValue({ id: 'conta-db-1' }) },
+    user: { findUnique: jest.fn().mockResolvedValue({ id: U }) },
+    conta: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn().mockResolvedValue({ id: 'conta-db-1' }),
+    },
     transacao: {
       aggregate: jest.fn().mockResolvedValue({ _max: { data: null } }),
       findMany: jest.fn().mockResolvedValue([]),
@@ -52,7 +58,9 @@ function montar(itemId: string | undefined = 'item-1') {
     listarContas: jest.fn().mockResolvedValue([CONTA_CORRENTE]),
     listarTransacoes: jest.fn().mockResolvedValue([]),
   };
-  const config = { get: jest.fn().mockReturnValue(itemId) };
+  const config = {
+    get: jest.fn((chave: string) => (chave === 'SEED_USER_EMAIL' ? 'dono@exemplo.com' : itemId)),
+  };
   const categorizacao = { categorizarPendentes: jest.fn().mockResolvedValue(0) };
   const service = new SyncService(
     prisma as unknown as PrismaService,
@@ -117,7 +125,7 @@ describe('SyncService.sincronizar', () => {
     expect(r.transacoesAtualizadas).toBe(1);
     expect(prisma.transacao.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { pluggyTransactionId: 't1' },
+        where: { pluggyTransactionId: 't1', userId: U },
         data: expect.objectContaining({ status: 'EFETIVADA' }),
       }),
     );
@@ -241,7 +249,7 @@ describe('SyncService.status', () => {
     const { prisma, service } = montar();
     prisma.syncRun.findFirst.mockResolvedValue(null);
 
-    await expect(service.status()).resolves.toEqual({ ultimoSync: null });
+    await expect(service.status(U)).resolves.toEqual({ ultimoSync: null });
   });
 
   it('CA-14: devolve o último SyncRun', async () => {
@@ -255,7 +263,7 @@ describe('SyncService.status', () => {
       transacoesAtualizadas: 1,
     });
 
-    await expect(service.status()).resolves.toEqual({
+    await expect(service.status(U)).resolves.toEqual({
       ultimoSync: {
         iniciadoEm: '2026-10-03T03:00:00.000Z',
         finalizadoEm: '2026-10-03T03:00:05.000Z',

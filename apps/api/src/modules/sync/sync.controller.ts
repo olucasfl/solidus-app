@@ -2,6 +2,7 @@ import type { SyncResponse, SyncStatusResponse } from '@solidus/shared';
 import { Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
+import { UserId } from '../../common/decorators/user-id.decorator';
 import { SYNC_THROTTLE_LIMIT, SYNC_THROTTLE_TTL_MS } from './sync.constants';
 import { SyncService } from './sync.service';
 import { SyncTokenGuard } from './sync-token.guard';
@@ -22,7 +23,7 @@ export class SyncController {
   }
 
   @Get('status')
-  status(): Promise<SyncStatusResponse> {
-    return this.syncService.status();
+  status(@UserId() userId: string): Promise<SyncStatusResponse> {
+    return this.syncService.status(userId);
   }
 }

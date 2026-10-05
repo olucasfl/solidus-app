@@ -16,11 +16,12 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
+import { UserId } from '../../common/decorators/user-id.decorator';
 import { CategorizacaoService } from './categorizacao.service';
 import { AtualizarRegraDto } from './dto/atualizar-regra.dto';
 import { CriarRegraDto } from './dto/criar-regra.dto';
 
-// Tudo autenticado pelo guard global (nenhum @Public()).
+// Tudo autenticado pelo guard global (nenhum @Public()); o dono é sempre o usuário da sessão.
 @Controller()
 export class CategorizacaoController {
   constructor(private readonly categorizacao: CategorizacaoService) {}
@@ -31,32 +32,33 @@ export class CategorizacaoController {
   }
 
   @Get('regras')
-  listarRegras(): Promise<RegraCategoria[]> {
-    return this.categorizacao.listarRegras();
+  listarRegras(@UserId() userId: string): Promise<RegraCategoria[]> {
+    return this.categorizacao.listarRegras(userId);
   }
 
   @Post('regras')
-  criarRegra(@Body() dto: CriarRegraDto): Promise<RegraCategoria> {
-    return this.categorizacao.criarRegra(dto);
+  criarRegra(@UserId() userId: string, @Body() dto: CriarRegraDto): Promise<RegraCategoria> {
+    return this.categorizacao.criarRegra(userId, dto);
   }
 
   @Patch('regras/:id')
   atualizarRegra(
+    @UserId() userId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarRegraDto,
   ): Promise<RegraCategoria> {
-    return this.categorizacao.atualizarRegra(id, dto);
+    return this.categorizacao.atualizarRegra(userId, id, dto);
   }
 
   @Delete('regras/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  removerRegra(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.categorizacao.removerRegra(id);
+  removerRegra(@UserId() userId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.categorizacao.removerRegra(userId, id);
   }
 
   @Post('categorizacao/recalcular')
   @HttpCode(HttpStatus.OK)
-  recalcular(): Promise<RecalcularResponse> {
-    return this.categorizacao.recalcular();
+  recalcular(@UserId() userId: string): Promise<RecalcularResponse> {
+    return this.categorizacao.recalcular(userId);
   }
 }

@@ -22,15 +22,29 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// Usuário único, criado pelo seed (spec 01-fundacao-auth). Registro pela API continua fechado.
+// Usuário do app (spec 01 e 06). O primeiro vem do seed; o cadastro público (spec 06, etapa 2) ainda
+// não está exposto. Todo dado financeiro pertence a um usuário (`userId`).
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique @db.VarChar(254)
-  senhaHash    String   @db.VarChar(255)
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  id           String        @id @default(uuid())
+  email        String        @unique @db.VarChar(254)
+  senhaHash    String        @db.VarChar(255)
+  criadoEm     DateTime      @default(now())
+  atualizadoEm DateTime      @updatedAt
+  // null = USUARIO. ADMIN edita o que é global (tabelas de imposto).
+  papel        PapelUsuario?
 
-  sessoes RefreshSession[]
+  sessoes    RefreshSession[]
+  contas     Conta[]
+  transacoes Transacao[]
+  syncRuns   SyncRun[]
+  regras     RegraCategoria[]
+  caixinhas  Caixinha[]
+  movimentos MovimentoCaixinha[]
+}
+
+enum PapelUsuario {
+  USUARIO
+  ADMIN
 }
 
 enum ClienteSessao {
@@ -81,6 +95,9 @@ enum StatusSync {
 
 model Conta {
   id              String      @id @default(uuid())
+  // dono do dado (spec 06): o código SEMPRE filtra por ele (o Prisma ignora o RLS do Postgres)
+  userId          String?
+  user            User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
   pluggyAccountId String      @unique
   tipo            TipoConta
   nome            String      @db.VarChar(120)
@@ -89,10 +106,15 @@ model Conta {
   criadoEm        DateTime    @default(now())
   atualizadoEm    DateTime    @updatedAt
   transacoes      Transacao[]
+
+  @@index([userId])
 }
 
 model Transacao {
   id                  String             @id @default(uuid())
+  // dono do dado (spec 06): o código SEMPRE filtra por ele (o Prisma ignora o RLS do Postgres)
+  userId              String?
+  user                User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
   pluggyTransactionId String             @unique
   contaId             String
   conta               Conta              @relation(fields: [contaId], references: [id], onDelete: Cascade)
@@ -113,12 +135,16 @@ model Transacao {
   movimentoCaixinha   MovimentoCaixinha?
 
   @@index([contaId, data])
+  @@index([userId, data])
   @@index([data])
   @@index([categoria])
 }
 
 model SyncRun {
   id                    String     @id @default(uuid())
+  // dono do dado (spec 06): o código SEMPRE filtra por ele (o Prisma ignora o RLS do Postgres)
+  userId                String?
+  user                  User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
   iniciadoEm            DateTime   @default(now())
   finalizadoEm          DateTime?
   status                StatusSync
@@ -127,6 +153,8 @@ model SyncRun {
   transacoesAtualizadas Int        @default(0)
   // só o code do erro (ex.: PLUGGY_INDISPONIVEL), nunca a mensagem do Pluggy
   erro                  String?    @db.VarChar(60)
+
+  @@index([userId, iniciadoEm])
 }
 
 // --- Categorização (spec 03-categorizacao) ---
@@ -139,6 +167,9 @@ enum OrigemCategoria {
 
 model RegraCategoria {
   id               String         @id @default(uuid())
+  // dono do dado (spec 06): o código SEMPRE filtra por ele (o Prisma ignora o RLS do Postgres)
+  userId           String?
+  user             User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
   padrao           String         @db.VarChar(120)
   categoria        String         @db.VarChar(40)
   tipo             TipoTransacao?
@@ -147,6 +178,8 @@ model RegraCategoria {
   valorMaxCentavos Int?
   prioridade       Int            @default(0)
   criadoEm         DateTime       @default(now())
+
+  @@index([userId])
 }
 
 // --- Carteira por Caixinha (spec 05-carteira-caixinhas). Nada fixo no código: Caixinhas, percentuais e
@@ -154,6 +187,9 @@ model RegraCategoria {
 
 model Caixinha {
   id                  String               @id @default(uuid())
+  // dono do dado (spec 06): o código SEMPRE filtra por ele (o Prisma ignora o RLS do Postgres)
+  userId              String?
+  user                User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
   nome                String               @db.VarChar(60)
   // 11500 = 115% do CDI; 0 = não rende
   percentualCdiBp     Int
@@ -166,6 +202,8 @@ model Caixinha {
   criadoEm            DateTime             @default(now())
   atualizadoEm        DateTime             @updatedAt
   movimentos          MovimentoCaixinha[]
+
+  @@index([userId])
 }
 
 // Em que ordem, no mesmo dia, entram aporte/resgate e o rendimento do CDI.
@@ -182,6 +220,9 @@ enum TipoMovimentoCaixinha {
 
 model MovimentoCaixinha {
   id            String                @id @default(uuid())
+  // dono do dado (spec 06): o código SEMPRE filtra por ele (o Prisma ignora o RLS do Postgres)
+  userId        String?
+  user          User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   caixinhaId    String
   caixinha      Caixinha              @relation(fields: [caixinhaId], references: [id], onDelete: Cascade)
   tipo          TipoMovimentoCaixinha
@@ -195,6 +236,7 @@ model MovimentoCaixinha {
   criadoEm      DateTime              @default(now())
 
   @@index([caixinhaId, data])
+  @@index([userId])
 }
 
 // CDI diário (série 12 do BCB, % ao dia) guardado como inteiro x10^8: 0,055131% a.d. => 55131

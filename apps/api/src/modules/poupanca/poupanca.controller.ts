@@ -1,5 +1,6 @@
 import type { HistoricoPoupancaResponse, PoupancaMes } from '@solidus/shared';
 import { Controller, Get, Query } from '@nestjs/common';
+import { UserId } from '../../common/decorators/user-id.decorator';
 import { HistoricoQuery, PoupancaQuery } from './dto/poupanca.dto';
 import { PoupancaService } from './poupanca.service';
 
@@ -9,12 +10,15 @@ export class PoupancaController {
   constructor(private readonly poupanca: PoupancaService) {}
 
   @Get()
-  mes(@Query() query: PoupancaQuery): Promise<PoupancaMes> {
-    return this.poupanca.mes(query.mes);
+  mes(@UserId() userId: string, @Query() query: PoupancaQuery): Promise<PoupancaMes> {
+    return this.poupanca.mes(userId, query.mes);
   }
 
   @Get('historico')
-  historico(@Query() query: HistoricoQuery): Promise<HistoricoPoupancaResponse> {
-    return this.poupanca.historico(query.meses);
+  historico(
+    @UserId() userId: string,
+    @Query() query: HistoricoQuery,
+  ): Promise<HistoricoPoupancaResponse> {
+    return this.poupanca.historico(userId, query.meses);
   }
 }

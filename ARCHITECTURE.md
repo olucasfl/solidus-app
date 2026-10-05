@@ -111,8 +111,10 @@ com cálculo vai em `domain/`, não no service do módulo.
 
 ### 4.5 `auth` (spec `01-fundacao-auth`)
 
-Usuário único (`User`, criado só pelo seed — **nunca** por rota: registro continua fechado para
-sempre). `POST /auth/login` (`@Public()`) aceita `{ email, senha, cliente?: 'web' | 'pwa' }` e
+Hoje só existe o usuário do seed (o cadastro público é permitido pela spec 06, mas ainda não foi
+implementado: não há `POST /auth/registro`). Todo dado é do usuário da sessão: `@UserId()` entrega o `sub`
+do access token, os services o põem em todo `where`/`data` (`isolamento.spec.ts` varre o código), recurso
+alheio dá 404. `User.papel = ADMIN` libera `PUT /impostos` via `AdminGuard`. `POST /auth/login` (`@Public()`) aceita `{ email, senha, cliente?: 'web' | 'pwa' }` e
 devolve `{ accessToken, usuario }` + cookie `solidus_refresh` (`httpOnly`, `Secure` só em
 produção). Duas TTLs de refresh por `cliente`: `web` expira em 7 dias; `pwa` não tem TTL no banco
 (`RefreshSession.expiraEm: null`) — o cookie em si recebe `Max-Age` de 10 anos só para sobreviver a

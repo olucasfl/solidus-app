@@ -1,6 +1,8 @@
 import { PrismaService } from '../../database/prisma.service';
 import { PoupancaService } from './poupanca.service';
 
+const U = 'u1';
+
 function montar() {
   const prisma = { transacao: { groupBy: jest.fn().mockResolvedValue([]) } };
   return { prisma, service: new PoupancaService(prisma as unknown as PrismaService) };
@@ -17,11 +19,12 @@ describe('PoupancaService', () => {
   it('CA-10: consulta o intervalo [início do mês, início do próximo) em UTC, agrupando por categoria e tipo', async () => {
     const { prisma, service } = montar();
 
-    await service.mes('2026-09');
+    await service.mes(U, '2026-09');
 
     expect(prisma.transacao.groupBy).toHaveBeenCalledWith({
       by: ['categoria', 'tipo'],
       where: {
+        userId: U,
         data: { gte: new Date('2026-09-01T00:00:00Z'), lt: new Date('2026-10-01T00:00:00Z') },
       },
       _count: { _all: true },
@@ -32,11 +35,12 @@ describe('PoupancaService', () => {
   it('dezembro fecha em janeiro do ano seguinte', async () => {
     const { prisma, service } = montar();
 
-    await service.mes('2026-12');
+    await service.mes(U, '2026-12');
 
     expect(prisma.transacao.groupBy).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
+          userId: U,
           data: { gte: new Date('2026-12-01T00:00:00Z'), lt: new Date('2027-01-01T00:00:00Z') },
         },
       }),
@@ -51,7 +55,7 @@ describe('PoupancaService', () => {
       grupo(null, 'DEBITO', 1, null as unknown as number),
     ]);
 
-    const r = await service.mes('2026-09');
+    const r = await service.mes(U, '2026-09');
 
     expect(r).toMatchObject({
       receitasCentavos: 1_000_000,
@@ -65,8 +69,8 @@ describe('PoupancaService', () => {
   it('CA-11: historico devolve do mais antigo ao mês corrente (e cruza o ano)', async () => {
     const { service } = montar();
 
-    const tres = await service.historico(3, new Date('2026-10-15T12:00:00Z'));
-    const virada = await service.historico(3, new Date('2026-01-10T12:00:00Z'));
+    const tres = await service.historico(U, 3, new Date('2026-10-15T12:00:00Z'));
+    const virada = await service.historico(U, 3, new Date('2026-01-10T12:00:00Z'));
 
     expect(tres.meses.map((m) => m.mes)).toEqual(['2026-08', '2026-09', '2026-10']);
     expect(virada.meses.map((m) => m.mes)).toEqual(['2025-11', '2025-12', '2026-01']);
@@ -76,7 +80,7 @@ describe('PoupancaService', () => {
     const { service } = montar();
 
     expect(
-      (await service.historico(undefined, new Date('2026-10-15T00:00:00Z'))).meses,
+      (await service.historico(U, undefined, new Date('2026-10-15T00:00:00Z'))).meses,
     ).toHaveLength(6);
   });
 
@@ -87,8 +91,8 @@ describe('PoupancaService', () => {
       grupo('LAZER', 'DEBITO', 2, -100_000),
     ]);
 
-    const direto = await service.mes('2026-09');
-    const historico = await service.historico(2, new Date('2026-10-02T00:00:00Z'));
+    const direto = await service.mes(U, '2026-09');
+    const historico = await service.historico(U, 2, new Date('2026-10-02T00:00:00Z'));
 
     expect(historico.meses[0]).toEqual(direto);
   });

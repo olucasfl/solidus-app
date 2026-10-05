@@ -24,7 +24,7 @@ describe('categorização e transações (e2e)', () => {
   const prisma = {
     regraCategoria: {
       findMany: jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       create: jest.fn(),
       deleteMany: jest.fn(),
@@ -32,8 +32,8 @@ describe('categorização e transações (e2e)', () => {
     transacao: {
       count: jest.fn().mockResolvedValue(0),
       findMany: jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn(),
-      findUniqueOrThrow: jest.fn(),
+      findFirst: jest.fn(),
+      findFirstOrThrow: jest.fn(),
       update: jest.fn().mockResolvedValue(undefined),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
@@ -79,7 +79,7 @@ describe('categorização e transações (e2e)', () => {
 
   beforeEach(() => {
     prisma.regraCategoria.create.mockReset();
-    prisma.transacao.findUnique.mockReset();
+    prisma.transacao.findFirst.mockReset();
     prisma.transacao.update.mockClear();
     prisma.transacao.count.mockClear();
   });
@@ -145,6 +145,7 @@ describe('categorização e transações (e2e)', () => {
       expect(r.status).toBe(201);
       expect(prisma.regraCategoria.create).toHaveBeenCalledWith({
         data: {
+          userId: 'user-1',
           padrao: 'padaria',
           categoria: 'MERCADO',
           tipo: 'DEBITO',
@@ -183,7 +184,7 @@ describe('categorização e transações (e2e)', () => {
         ).status,
       ).toBe(400);
 
-      prisma.regraCategoria.findUnique.mockResolvedValueOnce(null);
+      prisma.regraCategoria.findFirst.mockResolvedValueOnce(null);
       const nao = await http()
         .patch(`/regras/${UUID}`)
         .set('Authorization', auth)
@@ -200,7 +201,7 @@ describe('categorização e transações (e2e)', () => {
         valorMaxCentavos: 2,
         prioridade: 0,
       };
-      prisma.regraCategoria.findUnique.mockResolvedValueOnce(existente);
+      prisma.regraCategoria.findFirst.mockResolvedValueOnce(existente);
       prisma.regraCategoria.update.mockResolvedValueOnce({
         ...existente,
         valorMinCentavos: null,
@@ -234,7 +235,7 @@ describe('categorização e transações (e2e)', () => {
 
   describe('PATCH /transacoes/:id/categoria', () => {
     it('CA-12: válida 200 MANUAL; inexistente 404; categoria inválida, ausente e id inválido 400', async () => {
-      prisma.transacao.findUnique.mockResolvedValueOnce({ id: UUID });
+      prisma.transacao.findFirst.mockResolvedValueOnce({ id: UUID });
       const ok = await http()
         .patch(`/transacoes/${UUID}/categoria`)
         .set('Authorization', auth)
@@ -242,7 +243,7 @@ describe('categorização e transações (e2e)', () => {
       expect(ok.status).toBe(200);
       expect(ok.body).toEqual({ id: UUID, categoria: 'LAZER', origemCategoria: 'MANUAL' });
 
-      prisma.transacao.findUnique.mockResolvedValueOnce(null);
+      prisma.transacao.findFirst.mockResolvedValueOnce(null);
       const nao = await http()
         .patch(`/transacoes/${UUID}/categoria`)
         .set('Authorization', auth)
@@ -265,8 +266,8 @@ describe('categorização e transações (e2e)', () => {
     });
 
     it('CA-14: categoria null devolve o resultado das regras', async () => {
-      prisma.transacao.findUnique.mockResolvedValueOnce({ id: UUID });
-      prisma.transacao.findUniqueOrThrow.mockResolvedValueOnce({
+      prisma.transacao.findFirst.mockResolvedValueOnce({ id: UUID });
+      prisma.transacao.findFirstOrThrow.mockResolvedValueOnce({
         id: UUID,
         descricao: 'Farmácia',
         tipo: 'DEBITO',

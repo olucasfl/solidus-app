@@ -26,18 +26,23 @@ const SELECT_LINHA = {
   origemCategoria: true,
 } as const;
 
+/**
+ * Multiusuário (spec 06): TODO método recebe o `userId` da SESSÃO e filtra por ele — nunca confia em
+ * id vindo do cliente. Recurso de outro usuário é "não encontrado" (404), não "proibido".
+ */
 @Injectable()
 export class CategorizacaoService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listarRegras(): Promise<RegraCategoria[]> {
+  async listarRegras(userId: string): Promise<RegraCategoria[]> {
     const regras = await this.prisma.regraCategoria.findMany({
+      where: { userId },
       orderBy: [{ prioridade: 'desc' }, { criadoEm: 'asc' }],
     });
     return regras.map((r) => this.paraRegra(r));
   }
 
-  async criarRegra(dto: CriarRegraDto): Promise<RegraCategoria> {
+  async criarRegra(userId: string, dto: CriarRegraDto): Promise<RegraCategoria> {
     if (
       dto.valorMinCentavos !== undefined &&
       dto.valorMaxCentavos !== undefined &&
@@ -47,6 +52,7 @@ export class CategorizacaoService {
     }
     const regra = await this.prisma.regraCategoria.create({
       data: {
+        userId,
         padrao: dto.padrao,
         categoria: dto.categoria,
         tipo: dto.tipo ?? null,
@@ -59,8 +65,12 @@ export class CategorizacaoService {
   }
 
   /** Edição parcial: `undefined` mantém, `null` remove a restrição (tipo ou limite da faixa). */
-  async atualizarRegra(id: string, dto: AtualizarRegraDto): Promise<RegraCategoria> {
-    const atual = await this.prisma.regraCategoria.findUnique({ where: { id } });
+  async atualizarRegra(
+    userId: string,
+    id: string,
+    dto: AtualizarRegraDto,
+  ): Promise<RegraCategoria> {
+    const atual = await this.prisma.regraCategoria.findFirst({ where: { id, userId } });
     if (!atual) {
       throw this.regraNaoEncontrada();
     }
@@ -71,7 +81,7 @@ export class CategorizacaoService {
     }
 
     const regra = await this.prisma.regraCategoria.update({
-      where: { id },
+      where: { id, userId },
       data: {
         ...(dto.padrao !== undefined && { padrao: dto.padrao }),
         ...(dto.categoria !== undefined && { categoria: dto.categoria }),
@@ -84,54 +94,58 @@ export class CategorizacaoService {
     return this.paraRegra(regra);
   }
 
-  async removerRegra(id: string): Promise<void> {
-    const { count } = await this.prisma.regraCategoria.deleteMany({ where: { id } });
+  async removerRegra(userId: string, id: string): Promise<void> {
+    const { count } = await this.prisma.regraCategoria.deleteMany({ where: { id, userId } });
     if (count === 0) {
       throw this.regraNaoEncontrada();
     }
   }
 
   /** Só o que ainda não tem categoria (transações novas do sync). Devolve quantas receberam. */
-  async categorizarPendentes(): Promise<number> {
+  async categorizarPendentes(userId: string): Promise<number> {
     const linhas = await this.prisma.transacao.findMany({
-      where: { categoria: null },
+      where: { userId, categoria: null },
       select: SELECT_LINHA,
     });
-    return this.aplicar(linhas);
+    return this.aplicar(userId, linhas);
   }
 
   /** Reaplica as regras em tudo que não é MANUAL (a manual nunca é tocada por regra). */
-  async recalcular(): Promise<RecalcularResponse> {
+  async recalcular(userId: string): Promise<RecalcularResponse> {
     const linhas = await this.prisma.transacao.findMany({
-      where: { OR: [{ origemCategoria: null }, { origemCategoria: { not: 'MANUAL' } }] },
+      where: {
+        userId,
+        OR: [{ origemCategoria: null }, { origemCategoria: { not: 'MANUAL' } }],
+      },
       select: SELECT_LINHA,
     });
-    return { analisadas: linhas.length, alteradas: await this.aplicar(linhas) };
+    return { analisadas: linhas.length, alteradas: await this.aplicar(userId, linhas) };
   }
 
   /** Reavalia uma transação por regra (usado ao soltar uma categoria manual). */
   async categorizarUma(
+    userId: string,
     id: string,
   ): Promise<{ categoria: CategoriaId; origemCategoria: OrigemCategoria }> {
-    const regras = await this.carregarRegras();
-    const linha = await this.prisma.transacao.findUniqueOrThrow({
-      where: { id },
+    const regras = await this.carregarRegras(userId);
+    const linha = await this.prisma.transacao.findFirstOrThrow({
+      where: { id, userId },
       select: SELECT_LINHA,
     });
     const { categoria, origem } = categorizar(linha, regras);
     await this.prisma.transacao.update({
-      where: { id },
+      where: { id, userId },
       data: { categoria, origemCategoria: origem },
     });
     return { categoria, origemCategoria: origem };
   }
 
   /** Devolve quantas linhas mudaram. Atualiza por grupo (categoria, origem), não linha a linha. */
-  private async aplicar(linhas: LinhaParaCategorizar[]): Promise<number> {
+  private async aplicar(userId: string, linhas: LinhaParaCategorizar[]): Promise<number> {
     if (linhas.length === 0) {
       return 0;
     }
-    const regras = await this.carregarRegras();
+    const regras = await this.carregarRegras(userId);
     const grupos = new Map<
       string,
       { categoria: CategoriaId; origem: OrigemCategoria; ids: string[] }
@@ -151,7 +165,7 @@ export class CategorizacaoService {
     let alteradas = 0;
     for (const { categoria, origem, ids } of grupos.values()) {
       await this.prisma.transacao.updateMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids }, userId },
         data: { categoria, origemCategoria: origem },
       });
       alteradas += ids.length;
@@ -175,8 +189,8 @@ export class CategorizacaoService {
     });
   }
 
-  private async carregarRegras(): Promise<RegraUsuario[]> {
-    const regras = await this.prisma.regraCategoria.findMany();
+  private async carregarRegras(userId: string): Promise<RegraUsuario[]> {
+    const regras = await this.prisma.regraCategoria.findMany({ where: { userId } });
     return regras.map((r) => ({
       padrao: r.padrao,
       categoria: r.categoria as CategoriaId,

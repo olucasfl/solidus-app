@@ -9,11 +9,13 @@ import {
 } from './carteira-errors';
 import { CaixinhasService } from './caixinhas.service';
 
+const U = 'u1';
+
 function montar() {
   const prisma = {
     caixinha: {
       findMany: jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn().mockResolvedValue({ id: 'c1' }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'c1' }),
       create: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
@@ -27,7 +29,7 @@ function montar() {
         ),
       deleteMany: jest.fn(),
     },
-    transacao: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+    transacao: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
   };
   return { prisma, service: new CaixinhasService(prisma as unknown as PrismaService) };
 }
@@ -53,10 +55,11 @@ describe('CaixinhasService — Caixinhas (CA-13)', () => {
     const { prisma, service } = montar();
     prisma.caixinha.create.mockResolvedValue(caixinhaBanco);
 
-    const r = await service.criar({ nome: 'Turbo', percentualCdiBp: 11_500 });
+    const r = await service.criar(U, { nome: 'Turbo', percentualCdiBp: 11_500 });
 
     expect(prisma.caixinha.create).toHaveBeenCalledWith({
       data: {
+        userId: U,
         nome: 'Turbo',
         percentualCdiBp: 11_500,
         reservaDeGastos: false,
@@ -77,29 +80,31 @@ describe('CaixinhasService — Caixinhas (CA-13)', () => {
     const { prisma, service } = montar();
     prisma.caixinha.update.mockResolvedValue({ ...caixinhaBanco, ativa: false });
 
-    await service.atualizar('c1', { ativa: false });
+    await service.atualizar(U, 'c1', { ativa: false });
     expect(prisma.caixinha.update).toHaveBeenCalledWith({
-      where: { id: 'c1' },
+      where: { id: 'c1', userId: U },
       data: { ativa: false },
     });
 
-    prisma.caixinha.findUnique.mockResolvedValue(null);
-    await expect(service.atualizar('x', { nome: 'Y' })).rejects.toThrow(CaixinhaNaoEncontradaError);
+    prisma.caixinha.findFirst.mockResolvedValue(null);
+    await expect(service.atualizar(U, 'x', { nome: 'Y' })).rejects.toThrow(
+      CaixinhaNaoEncontradaError,
+    );
   });
 
   it('atualizar aceita trocar a convenção de rendimento e voltar ao padrão com null', async () => {
     const { prisma, service } = montar();
     prisma.caixinha.update.mockResolvedValue(caixinhaBanco);
 
-    await service.atualizar('c1', { convencaoRendimento: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO' });
+    await service.atualizar(U, 'c1', { convencaoRendimento: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO' });
     expect(prisma.caixinha.update).toHaveBeenLastCalledWith({
-      where: { id: 'c1' },
+      where: { id: 'c1', userId: U },
       data: { convencaoRendimento: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO' },
     });
 
-    await service.atualizar('c1', { convencaoRendimento: null });
+    await service.atualizar(U, 'c1', { convencaoRendimento: null });
     expect(prisma.caixinha.update).toHaveBeenLastCalledWith({
-      where: { id: 'c1' },
+      where: { id: 'c1', userId: U },
       data: { convencaoRendimento: null },
     });
   });
@@ -107,24 +112,24 @@ describe('CaixinhasService — Caixinhas (CA-13)', () => {
   it('remover: 404 se não existe', async () => {
     const { prisma, service } = montar();
     prisma.caixinha.deleteMany.mockResolvedValueOnce({ count: 0 });
-    await expect(service.remover('x')).rejects.toThrow(CaixinhaNaoEncontradaError);
+    await expect(service.remover(U, 'x')).rejects.toThrow(CaixinhaNaoEncontradaError);
 
     prisma.caixinha.deleteMany.mockResolvedValueOnce({ count: 1 });
-    await expect(service.remover('c1')).resolves.toBeUndefined();
+    await expect(service.remover(U, 'c1')).resolves.toBeUndefined();
   });
 
   it('removerMovimento: 404 se não existe', async () => {
     const { prisma, service } = montar();
     prisma.movimentoCaixinha.deleteMany.mockResolvedValue({ count: 0 });
 
-    await expect(service.removerMovimento('x')).rejects.toThrow(MovimentoNaoEncontradoError);
+    await expect(service.removerMovimento(U, 'x')).rejects.toThrow(MovimentoNaoEncontradoError);
   });
 
   it('listarMovimentos exige a Caixinha', async () => {
     const { prisma, service } = montar();
-    prisma.caixinha.findUnique.mockResolvedValue(null);
+    prisma.caixinha.findFirst.mockResolvedValue(null);
 
-    await expect(service.listarMovimentos('x')).rejects.toThrow(CaixinhaNaoEncontradaError);
+    await expect(service.listarMovimentos(U, 'x')).rejects.toThrow(CaixinhaNaoEncontradaError);
   });
 });
 
@@ -134,10 +139,11 @@ describe('CaixinhasService — movimentos (CA-14)', () => {
   it('grava SALDO com a data como data de calendário (meia-noite UTC)', async () => {
     const { prisma, service } = montar();
 
-    const r = await service.criarMovimento('c1', { ...ok, dataOrigem: '2025-01-10' });
+    const r = await service.criarMovimento(U, 'c1', { ...ok, dataOrigem: '2025-01-10' });
 
     expect(prisma.movimentoCaixinha.create).toHaveBeenCalledWith({
       data: {
+        userId: U,
         caixinhaId: 'c1',
         tipo: 'SALDO',
         data: new Date('2026-10-01T00:00:00.000Z'),
@@ -157,11 +163,11 @@ describe('CaixinhasService — movimentos (CA-14)', () => {
     const { service } = montar();
 
     await expect(
-      service.criarMovimento('c1', { tipo: 'SALDO', data: '2026-10-01', valorCentavos: 0 }),
+      service.criarMovimento(U, 'c1', { tipo: 'SALDO', data: '2026-10-01', valorCentavos: 0 }),
     ).resolves.toBeDefined();
     for (const tipo of ['APORTE', 'RESGATE'] as const) {
       await expect(
-        service.criarMovimento('c1', { tipo, data: '2026-10-01', valorCentavos: 0 }),
+        service.criarMovimento(U, 'c1', { tipo, data: '2026-10-01', valorCentavos: 0 }),
       ).rejects.toThrow(BadRequestException);
     }
   });
@@ -169,18 +175,18 @@ describe('CaixinhasService — movimentos (CA-14)', () => {
   it('rejeita data futura, data inexistente e data de hoje é aceita', async () => {
     const { prisma, service } = montar();
 
-    await expect(service.criarMovimento('c1', { ...ok, data: '2026-10-06' })).rejects.toMatchObject(
-      {
-        response: { code: 'DATA_FUTURA' },
-      },
-    );
-    await expect(service.criarMovimento('c1', { ...ok, data: '2026-02-30' })).rejects.toMatchObject(
-      {
-        response: { code: 'DATA_INVALIDA' },
-      },
-    );
     await expect(
-      service.criarMovimento('c1', { ...ok, data: '2026-10-05' }),
+      service.criarMovimento(U, 'c1', { ...ok, data: '2026-10-06' }),
+    ).rejects.toMatchObject({
+      response: { code: 'DATA_FUTURA' },
+    });
+    await expect(
+      service.criarMovimento(U, 'c1', { ...ok, data: '2026-02-30' }),
+    ).rejects.toMatchObject({
+      response: { code: 'DATA_INVALIDA' },
+    });
+    await expect(
+      service.criarMovimento(U, 'c1', { ...ok, data: '2026-10-05' }),
     ).resolves.toBeDefined();
     expect(prisma.movimentoCaixinha.create).toHaveBeenCalledTimes(1);
   });
@@ -189,7 +195,7 @@ describe('CaixinhasService — movimentos (CA-14)', () => {
     const { service } = montar();
 
     await expect(
-      service.criarMovimento('c1', {
+      service.criarMovimento(U, 'c1', {
         tipo: 'APORTE',
         data: '2026-10-01',
         valorCentavos: 5,
@@ -197,7 +203,7 @@ describe('CaixinhasService — movimentos (CA-14)', () => {
       }),
     ).rejects.toMatchObject({ response: { code: 'DATA_ORIGEM_INVALIDA' } });
     await expect(
-      service.criarMovimento('c1', { ...ok, dataOrigem: '2026-10-02' }),
+      service.criarMovimento(U, 'c1', { ...ok, dataOrigem: '2026-10-02' }),
     ).rejects.toMatchObject({ response: { code: 'DATA_ORIGEM_INVALIDA' } });
   });
 
@@ -205,15 +211,15 @@ describe('CaixinhasService — movimentos (CA-14)', () => {
     const { service } = montar();
 
     await expect(
-      service.criarMovimento('c1', { tipo: 'APORTE', data: '2026-10-01' }),
+      service.criarMovimento(U, 'c1', { tipo: 'APORTE', data: '2026-10-01' }),
     ).rejects.toMatchObject({ response: { code: 'VALOR_OBRIGATORIO' } });
   });
 
   it('Caixinha inexistente → 404 antes de qualquer outra validação', async () => {
     const { prisma, service } = montar();
-    prisma.caixinha.findUnique.mockResolvedValue(null);
+    prisma.caixinha.findFirst.mockResolvedValue(null);
 
-    await expect(service.criarMovimento('x', ok)).rejects.toThrow(CaixinhaNaoEncontradaError);
+    await expect(service.criarMovimento(U, 'x', ok)).rejects.toThrow(CaixinhaNaoEncontradaError);
   });
 });
 
@@ -230,54 +236,56 @@ describe('CaixinhasService — vínculo com transação do sync (CA-15)', () => 
 
   it('APORTE de uma saída: assume o módulo da transação e grava o vínculo', async () => {
     const { prisma, service } = montar();
-    prisma.transacao.findUnique.mockResolvedValue(transacao());
+    prisma.transacao.findFirst.mockResolvedValue(transacao());
 
-    const r = await service.criarMovimento('c1', aporte);
+    const r = await service.criarMovimento(U, 'c1', aporte);
 
     expect(r).toMatchObject({ tipo: 'APORTE', valorCentavos: 250_000, transacaoId: 't1' });
   });
 
   it('um valor informado vence o da transação', async () => {
     const { prisma, service } = montar();
-    prisma.transacao.findUnique.mockResolvedValue(transacao());
+    prisma.transacao.findFirst.mockResolvedValue(transacao());
 
-    const r = await service.criarMovimento('c1', { ...aporte, valorCentavos: 100_000 });
+    const r = await service.criarMovimento(U, 'c1', { ...aporte, valorCentavos: 100_000 });
 
     expect(r.valorCentavos).toBe(100_000);
   });
 
   it('RESGATE corresponde a uma ENTRADA; o sentido errado dá 422', async () => {
     const { prisma, service } = montar();
-    prisma.transacao.findUnique.mockResolvedValue(transacao());
+    prisma.transacao.findFirst.mockResolvedValue(transacao());
 
-    await expect(service.criarMovimento('c1', { ...aporte, tipo: 'RESGATE' })).rejects.toThrow(
+    await expect(service.criarMovimento(U, 'c1', { ...aporte, tipo: 'RESGATE' })).rejects.toThrow(
       TransacaoInvalidaError,
     );
 
-    prisma.transacao.findUnique.mockResolvedValue(
+    prisma.transacao.findFirst.mockResolvedValue(
       transacao({ tipo: 'CREDITO', valorCentavos: 90_000 }),
     );
-    await expect(service.criarMovimento('c1', aporte)).rejects.toThrow(TransacaoInvalidaError);
+    await expect(service.criarMovimento(U, 'c1', aporte)).rejects.toThrow(TransacaoInvalidaError);
     await expect(
-      service.criarMovimento('c1', { ...aporte, tipo: 'RESGATE' }),
+      service.criarMovimento(U, 'c1', { ...aporte, tipo: 'RESGATE' }),
     ).resolves.toMatchObject({ valorCentavos: 90_000 });
   });
 
   it('já vinculada → 409; inexistente, de outra categoria ou com SALDO → 422', async () => {
     const { prisma, service } = montar();
 
-    prisma.transacao.findUnique.mockResolvedValue(transacao({ movimentoCaixinha: { id: 'm9' } }));
-    await expect(service.criarMovimento('c1', aporte)).rejects.toThrow(TransacaoJaVinculadaError);
+    prisma.transacao.findFirst.mockResolvedValue(transacao({ movimentoCaixinha: { id: 'm9' } }));
+    await expect(service.criarMovimento(U, 'c1', aporte)).rejects.toThrow(
+      TransacaoJaVinculadaError,
+    );
 
-    prisma.transacao.findUnique.mockResolvedValue(null);
-    await expect(service.criarMovimento('c1', aporte)).rejects.toThrow(TransacaoInvalidaError);
+    prisma.transacao.findFirst.mockResolvedValue(null);
+    await expect(service.criarMovimento(U, 'c1', aporte)).rejects.toThrow(TransacaoInvalidaError);
 
-    prisma.transacao.findUnique.mockResolvedValue(transacao({ categoria: 'MERCADO' }));
-    await expect(service.criarMovimento('c1', aporte)).rejects.toThrow(TransacaoInvalidaError);
+    prisma.transacao.findFirst.mockResolvedValue(transacao({ categoria: 'MERCADO' }));
+    await expect(service.criarMovimento(U, 'c1', aporte)).rejects.toThrow(TransacaoInvalidaError);
 
-    prisma.transacao.findUnique.mockResolvedValue(transacao());
+    prisma.transacao.findFirst.mockResolvedValue(transacao());
     await expect(
-      service.criarMovimento('c1', { ...aporte, tipo: 'SALDO', valorCentavos: 5 }),
+      service.criarMovimento(U, 'c1', { ...aporte, tipo: 'SALDO', valorCentavos: 5 }),
     ).rejects.toThrow(TransacaoInvalidaError);
   });
 });
@@ -302,11 +310,12 @@ describe('CaixinhasService.sugestoes (CA-16)', () => {
       },
     ]);
 
-    const r = await service.sugestoes('2026-09-01');
+    const r = await service.sugestoes(U, '2026-09-01');
 
     expect(prisma.transacao.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
+          userId: U,
           categoria: 'INVESTIMENTO',
           data: { gte: new Date('2026-09-01T00:00:00.000Z') },
           movimentoCaixinha: null,
@@ -336,7 +345,7 @@ describe('CaixinhasService.sugestoes (CA-16)', () => {
   it('data inválida é erro', async () => {
     const { service } = montar();
 
-    await expect(service.sugestoes('2026-13-01')).rejects.toMatchObject({
+    await expect(service.sugestoes(U, '2026-13-01')).rejects.toMatchObject({
       response: { code: 'DATA_INVALIDA' },
     });
   });

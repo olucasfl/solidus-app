@@ -4,6 +4,8 @@ import { CarteiraService } from './carteira.service';
 import { CdiService } from './cdi.service';
 import { ImpostosService } from './impostos.service';
 
+const U = 'u1';
+
 const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
 function caixinha(p: Record<string, unknown>) {
@@ -51,7 +53,7 @@ describe('CarteiraService.consultar', () => {
   it('antes de calcular, deixa o CDI em dia sozinho (sem o usuário rodar nada)', async () => {
     const { cdiService, service } = montar();
 
-    await service.consultar();
+    await service.consultar(U);
 
     expect(cdiService.atualizarSeNecessario).toHaveBeenCalledTimes(1);
   });
@@ -59,7 +61,7 @@ describe('CarteiraService.consultar', () => {
   it('sem Caixinhas: totais zerados e nenhum aviso', async () => {
     const { service } = montar();
 
-    await expect(service.consultar()).resolves.toEqual({
+    await expect(service.consultar(U)).resolves.toEqual({
       data: '2026-10-05',
       caixinhas: [],
       totais: { patrimonioCentavos: 0, investidoCentavos: 0, disponivelParaGastarCentavos: 0 },
@@ -85,7 +87,7 @@ describe('CarteiraService.consultar', () => {
     ]);
     prisma.cdiDia.findMany.mockResolvedValue([{ data: d('2026-10-05'), taxaE8: 55_131 }]);
 
-    const r = await service.consultar();
+    const r = await service.consultar(U);
 
     // 100.000,00 x (1 + 0,00055131 x 1,15) = 100.063,40… → trunca para 100.063,40
     const turbo = r.caixinhas.find((c) => c.id === 'turbo')!;
@@ -104,7 +106,7 @@ describe('CarteiraService.consultar', () => {
     semTabela.prisma.caixinha.findMany.mockResolvedValue([
       caixinha({ movimentos: [saldo('2026-10-04', 100_000)] }),
     ]);
-    const r1 = await semTabela.service.consultar();
+    const r1 = await semTabela.service.consultar(U);
     expect(r1.caixinhas[0]!.saldoLiquidoEstimadoCentavos).toBeNull();
     expect(r1.avisos).toContain('IMPOSTO_NAO_CONFIGURADO');
 
@@ -118,7 +120,7 @@ describe('CarteiraService.consultar', () => {
     comTabela.prisma.cdiDia.findMany.mockResolvedValue([
       { data: d('2026-10-05'), taxaE8: 1_000_000 },
     ]);
-    const r2 = await comTabela.service.consultar();
+    const r2 = await comTabela.service.consultar(U);
     expect(r2.caixinhas[0]!.impostos).toEqual({ iofCentavos: 0, irCentavos: 150 });
     expect(r2.avisos).not.toContain('IMPOSTO_NAO_CONFIGURADO');
   });
@@ -130,7 +132,7 @@ describe('CarteiraService.consultar', () => {
       caixinha({ id: 'velha', ativa: false, movimentos: [saldo('2026-10-04', 500_000)] }),
     ]);
 
-    const r = await service.consultar();
+    const r = await service.consultar(U);
 
     expect(r.caixinhas.find((c) => c.id === 'nova')!.avisos).toEqual(['SEM_SALDO_INFORMADO']);
     expect(r.avisos).toContain('SEM_SALDO_INFORMADO');
@@ -143,7 +145,7 @@ describe('CarteiraService.consultar', () => {
       caixinha({ movimentos: [saldo('2026-09-01', 100_000), saldo('2026-10-01', 900_000)] }),
     ]);
 
-    const r = await service.consultar('2026-09-15');
+    const r = await service.consultar(U, '2026-09-15');
 
     expect(r.data).toBe('2026-09-15');
     expect(r.caixinhas[0]!.saldoInformado).toEqual({ data: '2026-09-01', centavos: 100_000 });
@@ -164,7 +166,7 @@ describe('CarteiraService.consultar', () => {
     ]);
     prisma.cdiDia.findMany.mockResolvedValue([{ data: d('2026-10-05'), taxaE8: 1_000_000 }]);
 
-    const r = await service.consultar();
+    const r = await service.consultar(U);
 
     // 1% no dia: ANTES rende sobre os 200.000; DEPOIS só sobre os 100.000 antigos.
     expect(r.caixinhas.find((c) => c.id === 'antes')!.saldoBrutoEstimadoCentavos).toBe(202_000);
@@ -174,10 +176,10 @@ describe('CarteiraService.consultar', () => {
   it('rejeita data futura e data inexistente', async () => {
     const { service } = montar();
 
-    await expect(service.consultar('2026-10-06')).rejects.toMatchObject({
+    await expect(service.consultar(U, '2026-10-06')).rejects.toMatchObject({
       response: { code: 'DATA_FUTURA' },
     });
-    await expect(service.consultar('2026-02-30')).rejects.toMatchObject({
+    await expect(service.consultar(U, '2026-02-30')).rejects.toMatchObject({
       response: { code: 'DATA_INVALIDA' },
     });
   });
@@ -186,18 +188,18 @@ describe('CarteiraService.consultar', () => {
 describe('CarteiraService.conferir', () => {
   it('404 se a Caixinha não existe', async () => {
     const { prisma, service } = montar();
-    (prisma as unknown as { caixinha: { findUnique: jest.Mock } }).caixinha.findUnique = jest
+    (prisma as unknown as { caixinha: { findFirst: jest.Mock } }).caixinha.findFirst = jest
       .fn()
       .mockResolvedValue(null);
 
-    await expect(service.conferir('x')).rejects.toMatchObject({
+    await expect(service.conferir(U, 'x')).rejects.toMatchObject({
       response: { code: 'CAIXINHA_NAO_ENCONTRADA' },
     });
   });
 
   it('compara os saldos informados e sugere a convenção que erra menos', async () => {
     const { prisma, cdiService, service } = montar();
-    (prisma as unknown as { caixinha: { findUnique: jest.Mock } }).caixinha.findUnique = jest
+    (prisma as unknown as { caixinha: { findFirst: jest.Mock } }).caixinha.findFirst = jest
       .fn()
       .mockResolvedValue(
         caixinha({
@@ -213,7 +215,7 @@ describe('CarteiraService.conferir', () => {
       { data: d('2026-01-05'), taxaE8: 100_000 },
     ]);
 
-    const r = await service.conferir('c1');
+    const r = await service.conferir(U, 'c1');
 
     expect(cdiService.atualizarSeNecessario).toHaveBeenCalled();
     expect(r.convencaoEmUso).toBe('MOVIMENTO_ANTES_DO_RENDIMENTO');

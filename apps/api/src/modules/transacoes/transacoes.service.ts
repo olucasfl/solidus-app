@@ -19,10 +19,10 @@ export class TransacoesService {
     private readonly categorizacao: CategorizacaoService,
   ) {}
 
-  async listar(query: ListarTransacoesQuery): Promise<ListaTransacoesResponse> {
+  async listar(userId: string, query: ListarTransacoesQuery): Promise<ListaTransacoesResponse> {
     const pagina = query.pagina ?? 1;
     const limite = query.limite ?? LIMITE_PADRAO;
-    const where: Prisma.TransacaoWhereInput = {};
+    const where: Prisma.TransacaoWhereInput = { userId };
 
     if (query.mes) {
       const [ano, mes] = query.mes.split('-').map(Number) as [number, number];
@@ -36,9 +36,9 @@ export class TransacoesService {
     }
 
     const [total, linhas] = await Promise.all([
-      this.prisma.transacao.count({ where }),
+      this.prisma.transacao.count({ where: { ...where, userId } }),
       this.prisma.transacao.findMany({
-        where,
+        where: { ...where, userId },
         orderBy: [{ data: 'desc' }, { id: 'asc' }],
         skip: (pagina - 1) * limite,
         take: limite,
@@ -65,11 +65,12 @@ export class TransacoesService {
   }
 
   async definirCategoria(
+    userId: string,
     id: string,
     categoria: CategoriaId | null,
   ): Promise<DefinirCategoriaResponse> {
-    const existente = await this.prisma.transacao.findUnique({
-      where: { id },
+    const existente = await this.prisma.transacao.findFirst({
+      where: { id, userId },
       select: { id: true },
     });
     if (!existente) {
@@ -81,11 +82,11 @@ export class TransacoesService {
     }
 
     if (categoria === null) {
-      return { id, ...(await this.categorizacao.categorizarUma(id)) };
+      return { id, ...(await this.categorizacao.categorizarUma(userId, id)) };
     }
 
     await this.prisma.transacao.update({
-      where: { id },
+      where: { id, userId },
       data: { categoria, origemCategoria: 'MANUAL' },
     });
     return { id, categoria, origemCategoria: 'MANUAL' };

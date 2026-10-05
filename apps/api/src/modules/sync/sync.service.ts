@@ -7,7 +7,11 @@ import { CategorizacaoService } from '../categorizacao/categorizacao.service';
 import { mapearConta, mapearTransacao, type TransacaoMapeada } from '../../domain/sync/mapear';
 import { SYNC_JANELA_SOBREPOSICAO_DIAS } from './sync.constants';
 import { PluggyGateway } from './pluggy.gateway';
-import { PluggyNaoConfiguradoError, SyncEmAndamentoError } from './sync-errors';
+import {
+  PluggyNaoConfiguradoError,
+  SyncDonoNaoEncontradoError,
+  SyncEmAndamentoError,
+} from './sync-errors';
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 const LOTE = 500;
@@ -52,8 +56,15 @@ export class SyncService {
     if (this.emAndamento) {
       throw new SyncEmAndamentoError();
     }
-
     this.emAndamento = true;
+    try {
+      return await this.sincronizarDoDono(itemId, await this.resolverDono());
+    } finally {
+      this.emAndamento = false;
+    }
+  }
+
+  private async sincronizarDoDono(itemId: string, donoId: string): Promise<SyncResponse> {
     const iniciadoEm = new Date();
     const contadores: Contadores = {
       contas: 0,
@@ -63,31 +74,48 @@ export class SyncService {
     };
 
     try {
-      await this.executar(itemId, contadores);
-      await this.categorizarSemDerrubar();
-      await this.registrar(iniciadoEm, 'SUCESSO', contadores);
+      await this.executar(donoId, itemId, contadores);
+      await this.categorizarSemDerrubar(donoId);
+      await this.registrar(donoId, iniciadoEm, 'SUCESSO', contadores);
       return { ...contadores, duracaoMs: Date.now() - iniciadoEm.getTime() };
     } catch (error) {
-      await this.registrar(iniciadoEm, 'FALHA', contadores, this.codeDoErro(error)).catch(() =>
-        this.logger.error('Falha ao registrar o SyncRun'),
+      await this.registrar(donoId, iniciadoEm, 'FALHA', contadores, this.codeDoErro(error)).catch(
+        () => this.logger.error('Falha ao registrar o SyncRun'),
       );
       throw error;
-    } finally {
-      this.emAndamento = false;
     }
   }
 
   /** Os dados do Pluggy já estão gravados: falhar ao categorizar não pode derrubar o sync (spec 03). */
-  private async categorizarSemDerrubar(): Promise<void> {
+  private async categorizarSemDerrubar(donoId: string): Promise<void> {
     try {
-      await this.categorizacao.categorizarPendentes();
+      await this.categorizacao.categorizarPendentes(donoId);
     } catch (error) {
       this.logger.error(`Falha ao categorizar (${error instanceof Error ? error.name : 'erro'})`);
     }
   }
 
-  async status(): Promise<SyncStatusResponse> {
-    const run = await this.prisma.syncRun.findFirst({ orderBy: { iniciadoEm: 'desc' } });
+  /**
+   * TRANSITÓRIO (spec 06, até a etapa 3 trazer `Conexao` por usuário): a credencial do Pluggy vem do
+   * `.env` e é de UMA pessoa — o usuário cujo e-mail é `SEED_USER_EMAIL`. Os dados sincronizados são
+   * gravados no nome dele, nunca de "quem chamou" (o cron não tem sessão).
+   */
+  private async resolverDono(): Promise<string> {
+    const email = this.config.get('SEED_USER_EMAIL', { infer: true });
+    const dono = email
+      ? await this.prisma.user.findUnique({ where: { email }, select: { id: true } })
+      : null;
+    if (!dono) {
+      throw new SyncDonoNaoEncontradoError();
+    }
+    return dono.id;
+  }
+
+  async status(userId: string): Promise<SyncStatusResponse> {
+    const run = await this.prisma.syncRun.findFirst({
+      where: { userId },
+      orderBy: { iniciadoEm: 'desc' },
+    });
     if (!run) {
       return { ultimoSync: null };
     }
@@ -103,8 +131,8 @@ export class SyncService {
     };
   }
 
-  private async executar(itemId: string, contadores: Contadores): Promise<void> {
-    const dateFrom = await this.inicioDaJanela();
+  private async executar(donoId: string, itemId: string, contadores: Contadores): Promise<void> {
+    const dateFrom = await this.inicioDaJanela(donoId);
     const contasPluggy = await this.gateway.listarContas(itemId);
 
     for (const contaPluggy of contasPluggy) {
@@ -112,9 +140,17 @@ export class SyncService {
       if (!mapeada) {
         continue;
       }
+      const existente = await this.prisma.conta.findUnique({
+        where: { pluggyAccountId: mapeada.pluggyAccountId },
+        select: { userId: true },
+      });
+      if (existente && existente.userId !== donoId) {
+        // Nunca sobrescreve a conta de outra pessoa (o id do Pluggy é único no mundo).
+        throw new Error('Conta do Pluggy pertence a outro usuário');
+      }
       const conta = await this.prisma.conta.upsert({
         where: { pluggyAccountId: mapeada.pluggyAccountId },
-        create: mapeada,
+        create: { ...mapeada, userId: donoId },
         update: {
           tipo: mapeada.tipo,
           nome: mapeada.nome,
@@ -128,13 +164,16 @@ export class SyncService {
         mapearTransacao,
       );
       contadores.semConversao += transacoes.filter((t) => t.semConversao).length;
-      await this.gravarTransacoes(conta.id, transacoes, contadores);
+      await this.gravarTransacoes(donoId, conta.id, transacoes, contadores);
     }
   }
 
   /** `undefined` no primeiro sync (busca tudo); depois, a data mais recente menos a sobreposição. */
-  private async inicioDaJanela(): Promise<string | undefined> {
-    const { _max } = await this.prisma.transacao.aggregate({ _max: { data: true } });
+  private async inicioDaJanela(donoId: string): Promise<string | undefined> {
+    const { _max } = await this.prisma.transacao.aggregate({
+      where: { userId: donoId },
+      _max: { data: true },
+    });
     if (!_max.data) {
       return undefined;
     }
@@ -142,6 +181,7 @@ export class SyncService {
   }
 
   private async gravarTransacoes(
+    donoId: string,
     contaId: string,
     transacoes: TransacaoMapeada[],
     contadores: Contadores,
@@ -149,14 +189,17 @@ export class SyncService {
     for (let i = 0; i < transacoes.length; i += LOTE) {
       const lote = transacoes.slice(i, i + LOTE);
       const existentes = await this.prisma.transacao.findMany({
-        where: { pluggyTransactionId: { in: lote.map((t) => t.pluggyTransactionId) } },
+        where: {
+          userId: donoId,
+          pluggyTransactionId: { in: lote.map((t) => t.pluggyTransactionId) },
+        },
       });
       const porId = new Map(existentes.map((e) => [e.pluggyTransactionId, e]));
 
       const novas = lote.filter((t) => !porId.has(t.pluggyTransactionId));
       if (novas.length > 0) {
         await this.prisma.transacao.createMany({
-          data: novas.map((t) => this.paraBanco(contaId, t)),
+          data: novas.map((t) => this.paraBanco(donoId, contaId, t)),
           skipDuplicates: true,
         });
         contadores.transacoesNovas += novas.length;
@@ -167,8 +210,15 @@ export class SyncService {
         if (!atual || !this.mudou(atual, t)) {
           continue;
         }
-        const { pluggyTransactionId, ...campos } = this.paraBanco(contaId, t);
-        await this.prisma.transacao.update({ where: { pluggyTransactionId }, data: campos });
+        const {
+          pluggyTransactionId,
+          userId: _dono,
+          ...campos
+        } = this.paraBanco(donoId, contaId, t);
+        await this.prisma.transacao.update({
+          where: { pluggyTransactionId, userId: donoId },
+          data: campos,
+        });
         contadores.transacoesAtualizadas += 1;
       }
     }
@@ -184,8 +234,9 @@ export class SyncService {
     );
   }
 
-  private paraBanco(contaId: string, t: TransacaoMapeada) {
+  private paraBanco(donoId: string, contaId: string, t: TransacaoMapeada) {
     return {
+      userId: donoId,
       pluggyTransactionId: t.pluggyTransactionId,
       contaId,
       data: t.data,
@@ -209,6 +260,7 @@ export class SyncService {
   }
 
   private registrar(
+    donoId: string,
     iniciadoEm: Date,
     status: 'SUCESSO' | 'FALHA',
     contadores: Contadores,
@@ -216,6 +268,7 @@ export class SyncService {
   ): Promise<unknown> {
     return this.prisma.syncRun.create({
       data: {
+        userId: donoId,
         iniciadoEm,
         finalizadoEm: new Date(),
         status,

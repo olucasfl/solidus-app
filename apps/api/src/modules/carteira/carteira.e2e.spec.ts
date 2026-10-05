@@ -24,9 +24,10 @@ describe('carteira por Caixinha (e2e)', () => {
   let auth: string;
   const gateway = { buscar: jest.fn() };
   const prisma = {
+    user: { findUnique: jest.fn().mockResolvedValue({ papel: 'ADMIN' }) },
     caixinha: {
       findMany: jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
@@ -37,7 +38,7 @@ describe('carteira por Caixinha (e2e)', () => {
       deleteMany: jest.fn(),
       aggregate: jest.fn().mockResolvedValue({ _min: { data: null } }),
     },
-    transacao: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+    transacao: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     cdiDia: {
       findMany: jest.fn().mockResolvedValue([]),
       createMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -97,7 +98,7 @@ describe('carteira por Caixinha (e2e)', () => {
   beforeEach(() => {
     prisma.caixinha.create.mockReset();
     prisma.caixinha.update.mockReset();
-    prisma.caixinha.findUnique.mockReset().mockResolvedValue({ id: UUID });
+    prisma.caixinha.findFirst.mockReset().mockResolvedValue({ id: UUID });
     prisma.movimentoCaixinha.create.mockReset();
     prisma.$transaction.mockClear();
     gateway.buscar.mockReset().mockResolvedValue([]);
@@ -167,6 +168,7 @@ describe('carteira por Caixinha (e2e)', () => {
       expect(r.status).toBe(201);
       expect(prisma.caixinha.create).toHaveBeenCalledWith({
         data: {
+          userId: 'user-1',
           nome: 'Turbo',
           percentualCdiBp: 11_500,
           reservaDeGastos: false,
@@ -192,7 +194,7 @@ describe('carteira por Caixinha (e2e)', () => {
     ).toBe(400);
     expect((await http().delete('/caixinhas/x').set('Authorization', auth)).status).toBe(400);
 
-    prisma.caixinha.findUnique.mockResolvedValue(null);
+    prisma.caixinha.findFirst.mockResolvedValue(null);
     const patch = await http()
       .patch(`/caixinhas/${UUID}`)
       .set('Authorization', auth)
@@ -231,12 +233,12 @@ describe('carteira por Caixinha (e2e)', () => {
         400,
       );
 
-      prisma.caixinha.findUnique.mockResolvedValueOnce(null);
+      prisma.caixinha.findFirst.mockResolvedValueOnce(null);
       const nao = await http().get(`/caixinhas/${UUID}/conferencia`).set('Authorization', auth);
       expect(nao.status).toBe(404);
       expect(nao.body.code).toBe('CAIXINHA_NAO_ENCONTRADA');
 
-      prisma.caixinha.findUnique.mockResolvedValueOnce({
+      prisma.caixinha.findFirst.mockResolvedValueOnce({
         id: UUID,
         percentualCdiBp: 10_000,
         convencaoRendimento: null,
@@ -301,7 +303,7 @@ describe('carteira por Caixinha (e2e)', () => {
     });
 
     it('CA-15: transação já vinculada → 409; de outra categoria → 422', async () => {
-      prisma.transacao.findUnique.mockResolvedValueOnce({
+      prisma.transacao.findFirst.mockResolvedValueOnce({
         id: UUID,
         categoria: 'INVESTIMENTO',
         tipo: 'DEBITO',
@@ -312,7 +314,7 @@ describe('carteira por Caixinha (e2e)', () => {
       expect(vinculada.status).toBe(409);
       expect(vinculada.body.code).toBe('TRANSACAO_JA_VINCULADA');
 
-      prisma.transacao.findUnique.mockResolvedValueOnce({ id: UUID, categoria: 'MERCADO' });
+      prisma.transacao.findFirst.mockResolvedValueOnce({ id: UUID, categoria: 'MERCADO' });
       const outra = await post({ tipo: 'APORTE', data: '2026-01-01', transacaoId: UUID });
       expect(outra.status).toBe(422);
       expect(outra.body.code).toBe('TRANSACAO_INVALIDA');
@@ -341,6 +343,20 @@ describe('carteira por Caixinha (e2e)', () => {
   });
 
   describe('/impostos (CA-17)', () => {
+    it('quem não é ADMIN não edita as tabelas: 403 ACESSO_NEGADO e nada é gravado', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce({ papel: null });
+      prisma.$transaction.mockClear();
+
+      const r = await http()
+        .put('/impostos/IR')
+        .set('Authorization', auth)
+        .send({ faixas: [{ ateDias: null, aliquotaBp: 1_500 }] });
+
+      expect(r.status).toBe(403);
+      expect(r.body).toMatchObject({ code: 'ACESSO_NEGADO' });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
     const put = (tipo: string, corpo: object) =>
       http().put(`/impostos/${tipo}`).set('Authorization', auth).send(corpo);
 

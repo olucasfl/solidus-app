@@ -67,7 +67,8 @@ export class CdiService implements OnApplicationBootstrap {
   /** Só vale buscar se existe algum movimento (senão não há o que calcular) e o CDI está atrás. */
   private async precisaAtualizar(): Promise<boolean> {
     const [movimento, cdi] = await Promise.all([
-      this.prisma.movimentoCaixinha.aggregate({ _min: { data: true } }),
+      // O CDI é dado público: vale o movimento mais antigo de QUALQUER usuário.
+      this.prisma.movimentoCaixinha.aggregate({ _min: { data: true } /* isolamento-global */ }),
       this.prisma.cdiDia.aggregate({ _min: { data: true }, _max: { data: true } }),
     ]);
     if (!movimento._min.data) return false;
@@ -111,7 +112,8 @@ export class CdiService implements OnApplicationBootstrap {
    */
   private async inicioDaBusca(hoje: DataIso): Promise<DataIso> {
     const [movimento, cdi] = await Promise.all([
-      this.prisma.movimentoCaixinha.aggregate({ _min: { data: true } }),
+      // O CDI é dado público: vale o movimento mais antigo de QUALQUER usuário.
+      this.prisma.movimentoCaixinha.aggregate({ _min: { data: true } /* isolamento-global */ }),
       this.prisma.cdiDia.aggregate({ _min: { data: true }, _max: { data: true } }),
     ]);
     const primeiroMovimento = movimento._min.data ? dataIsoDe(movimento._min.data) : null;

@@ -24,13 +24,18 @@ function ambiente(extra: Record<string, unknown> = {}) {
     JWT_ACCESS_SECRET: SEGREDO_JWT,
     SYNC_CRON_TOKEN: TOKEN,
     PLUGGY_ITEM_ID: 'item-1',
+    SEED_USER_EMAIL: 'dono@exemplo.com',
     ...extra,
   };
 }
 
 async function montar(env: Record<string, unknown>) {
   const prisma = {
-    conta: { upsert: jest.fn().mockResolvedValue({ id: 'conta-1' }) },
+    user: { findUnique: jest.fn().mockResolvedValue({ id: 'u1' }) },
+    conta: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn().mockResolvedValue({ id: 'conta-1' }),
+    },
     transacao: {
       aggregate: jest.fn().mockResolvedValue({ _max: { data: null } }),
       findMany: jest.fn().mockResolvedValue([]),

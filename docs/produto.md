@@ -5,7 +5,8 @@ Memória do produto para sessões futuras. O que muda rápido (estado de impleme
 
 ## Visão
 
-App pessoal de finanças, de um único usuário (eu, Lucas), para responder três perguntas:
+App de finanças pessoais **para qualquer pessoa** (cada uma com os próprios dados; o Lucas é o primeiro
+usuário), para responder três perguntas:
 **"posso gastar isso?"**, **"onde coloco esse dinheiro?"**, **"estou melhorando?"**.
 
 O app organiza, calcula e verifica regras minhas. **Não é consultor** (não dá recomendação de
@@ -28,10 +29,14 @@ Não reabra sem motivo técnico forte (ver `.claude/rules/RULES.md` para como pe
   é o único lugar que decide o que conta como "inteiro".
 - **Taxa de poupança** = `(receitas - despesas reais) / receitas` no mês. Aporte em investimento
   **não** é despesa. Transferência interna fica fora das métricas.
-- **Auth single-user**: registro desabilitado, usuário único criado por seed
-  (`SEED_USER_EMAIL`/`SEED_USER_PASSWORD`, senha com argon2). Access token curto + refresh em
-  cookie httpOnly. Todas as rotas exigem autenticação por padrão; só login e `/health` são
-  `@Public()`.
+- **Auth multiusuário** (mudou em 2026-10-05; antes era single-user com registro desabilitado): contas
+  criadas por cadastro com **e-mail verificado**; senha com argon2; access token curto + refresh em
+  cookie httpOnly. Todas as rotas exigem autenticação por padrão; só login, cadastro, verificação,
+  recuperação de senha e `/health` são `@Public()`. O usuário do seed continua existindo (é o primeiro
+  usuário). **Isolamento por usuário feito no código** (o Prisma ignora o RLS do Postgres): todo dado
+  financeiro é filtrado pelo usuário da sessão. Plano e etapas: spec `06-multiusuario`.
+- **Nada concreto para uma pessoa só**: Caixinhas, percentuais, regras de categoria, convenção de
+  rendimento e tabelas de imposto são dados editáveis; o código só sabe _como calcular_.
 - **Banco (Supabase)**: `DATABASE_URL` é o transaction pooler (6543,
   `?pgbouncer=true&connection_limit=1`); `DIRECT_URL` é o session pooler (5432), usado pelo Prisma
   Migrate. O Prisma conecta como role `postgres` (ignora RLS). Toda migration que cria tabela faz

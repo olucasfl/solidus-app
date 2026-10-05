@@ -51,8 +51,8 @@ async function main(): Promise<void> {
 
     const usuario = await prisma.user.upsert({
       where: { email },
-      create: { email, senhaHash },
-      update: { senhaHash },
+      create: { email, senhaHash, papel: 'ADMIN' },
+      update: { senhaHash, papel: 'ADMIN' },
     });
 
     console.log(`Seed ok — usuário único: ${usuario.email} (id ${usuario.id}).`);

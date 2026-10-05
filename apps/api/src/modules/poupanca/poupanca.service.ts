@@ -15,11 +15,12 @@ export class PoupancaService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** `mes` já validado como `YYYY-MM` (DTO). Calendário em UTC, igual a `GET /transacoes?mes=`. */
-  async mes(mes: string): Promise<PoupancaMes> {
+  async mes(userId: string, mes: string): Promise<PoupancaMes> {
     const [ano, numero] = mes.split('-').map(Number) as [number, number];
     const grupos = await this.prisma.transacao.groupBy({
       by: ['categoria', 'tipo'],
       where: {
+        userId,
         data: {
           gte: new Date(Date.UTC(ano, numero - 1, 1)),
           lt: new Date(Date.UTC(ano, numero, 1)),
@@ -39,11 +40,15 @@ export class PoupancaService {
   }
 
   /** Do mês mais antigo ao corrente, cada um pelo mesmo cálculo de `mes()`. */
-  async historico(meses = MESES_PADRAO, hoje = new Date()): Promise<HistoricoPoupancaResponse> {
+  async historico(
+    userId: string,
+    meses = MESES_PADRAO,
+    hoje = new Date(),
+  ): Promise<HistoricoPoupancaResponse> {
     const resultado: PoupancaMes[] = [];
     for (let atras = meses - 1; atras >= 0; atras -= 1) {
       resultado.push(
-        await this.mes(formatarMes(hoje.getUTCFullYear(), hoje.getUTCMonth() - atras)),
+        await this.mes(userId, formatarMes(hoje.getUTCFullYear(), hoje.getUTCMonth() - atras)),
       );
     }
     return { meses: resultado };

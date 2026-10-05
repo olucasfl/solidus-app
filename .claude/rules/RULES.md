@@ -35,7 +35,11 @@ libera o que está em "Perguntar antes"; **não libera o que está em "Nunca"**.
 - Guard global nega por padrão (`AccessGuard`, `app.module.ts`). Toda rota nova é autenticada a
   menos que marcada `@Public()`. **`@Public()` exige justificativa na spec** — hoje só existe em
   `GET /health`. Se você se pegar adicionando `@Public()` "para testar mais fácil", pare.
-- Auth é single-user: **nunca** reabra registro público de conta. O único usuário vem do seed.
+- Auth é **multiusuário** (decisão do humano, 2026-10-05, spec `06-multiusuario`): o cadastro público
+  só é permitido **com e-mail verificado**, limite de tentativas e senha com `argon2`. Toda consulta de
+  dado financeiro é filtrada pelo usuário **da sessão** (`@CurrentUser()`), **nunca** por parâmetro vindo
+  do cliente; recurso de outro usuário responde 404; cada módulo tem teste "usuário A nunca vê dado do B".
+  Enquanto o cadastro não estiver implementado e verificado, **não exponha** `POST /auth/registro`.
 
 ## 4. Pluggy e dados externos
 

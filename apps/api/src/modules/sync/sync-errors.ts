@@ -41,3 +41,18 @@ export class PluggyNaoConfiguradoError extends HttpException {
     super(e.getResponse(), e.getStatus());
   }
 }
+
+/**
+ * O usuário dono da credencial do Pluggy do `.env` (`SEED_USER_EMAIL`) não existe no banco: rode
+ * `pnpm db:seed`. Transitório até a etapa 3 da spec 06 (conexão por usuário).
+ */
+export class SyncDonoNaoEncontradoError extends HttpException {
+  constructor() {
+    const e = erro(
+      HttpStatus.SERVICE_UNAVAILABLE,
+      'SYNC_DONO_NAO_ENCONTRADO',
+      'Usuário dono da integração não encontrado.',
+    );
+    super(e.getResponse(), e.getStatus());
+  }
+}

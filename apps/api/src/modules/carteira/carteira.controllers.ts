@@ -27,6 +27,8 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
+import { UserId } from '../../common/decorators/user-id.decorator';
+import { AdminGuard } from '../../common/guards/admin.guard';
 import { SYNC_THROTTLE_LIMIT, SYNC_THROTTLE_TTL_MS } from '../sync/sync.constants';
 import { SyncTokenGuard } from '../sync/sync-token.guard';
 import { CaixinhasService } from './caixinhas.service';
@@ -53,45 +55,53 @@ export class CaixinhasController {
   ) {}
 
   @Get()
-  listar(): Promise<Caixinha[]> {
-    return this.caixinhas.listar();
+  listar(@UserId() userId: string): Promise<Caixinha[]> {
+    return this.caixinhas.listar(userId);
   }
 
   @Post()
-  criar(@Body() dto: CriarCaixinhaDto): Promise<Caixinha> {
-    return this.caixinhas.criar(dto);
+  criar(@UserId() userId: string, @Body() dto: CriarCaixinhaDto): Promise<Caixinha> {
+    return this.caixinhas.criar(userId, dto);
   }
 
   @Patch(':id')
   atualizar(
+    @UserId() userId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AtualizarCaixinhaDto,
   ): Promise<Caixinha> {
-    return this.caixinhas.atualizar(id, dto);
+    return this.caixinhas.atualizar(userId, id, dto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remover(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.caixinhas.remover(id);
+  remover(@UserId() userId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.caixinhas.remover(userId, id);
   }
 
   @Get(':id/conferencia')
-  conferir(@Param('id', ParseUUIDPipe) id: string): Promise<ConferenciaCaixinha> {
-    return this.carteira.conferir(id);
+  conferir(
+    @UserId() userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ConferenciaCaixinha> {
+    return this.carteira.conferir(userId, id);
   }
 
   @Get(':id/movimentos')
-  listarMovimentos(@Param('id', ParseUUIDPipe) id: string): Promise<MovimentoCaixinha[]> {
-    return this.caixinhas.listarMovimentos(id);
+  listarMovimentos(
+    @UserId() userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<MovimentoCaixinha[]> {
+    return this.caixinhas.listarMovimentos(userId, id);
   }
 
   @Post(':id/movimentos')
   criarMovimento(
+    @UserId() userId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CriarMovimentoDto,
   ): Promise<MovimentoCaixinha> {
-    return this.caixinhas.criarMovimento(id, dto);
+    return this.caixinhas.criarMovimento(userId, id, dto);
   }
 }
 
@@ -100,14 +110,17 @@ export class MovimentosController {
   constructor(private readonly caixinhas: CaixinhasService) {}
 
   @Get('sugestoes')
-  sugestoes(@Query() query: SugestoesQuery): Promise<SugestaoMovimento[]> {
-    return this.caixinhas.sugestoes(query.desde);
+  sugestoes(
+    @UserId() userId: string,
+    @Query() query: SugestoesQuery,
+  ): Promise<SugestaoMovimento[]> {
+    return this.caixinhas.sugestoes(userId, query.desde);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remover(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.caixinhas.removerMovimento(id);
+  remover(@UserId() userId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.caixinhas.removerMovimento(userId, id);
   }
 }
 
@@ -120,6 +133,8 @@ export class ImpostosController {
     return this.impostos.listar();
   }
 
+  // A tabela de imposto é GLOBAL (vale para todos): só o ADMIN altera (spec 06).
+  @UseGuards(AdminGuard)
   @Put(':tipo')
   substituir(
     @Param('tipo', new ParseEnumPipe(TIPOS_IMPOSTO)) tipo: TipoImposto,
@@ -134,8 +149,8 @@ export class CarteiraController {
   constructor(private readonly carteira: CarteiraService) {}
 
   @Get()
-  consultar(@Query() query: CarteiraQuery): Promise<Carteira> {
-    return this.carteira.consultar(query.data);
+  consultar(@UserId() userId: string, @Query() query: CarteiraQuery): Promise<Carteira> {
+    return this.carteira.consultar(userId, query.data);
   }
 }
 

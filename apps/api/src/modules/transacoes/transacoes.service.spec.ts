@@ -3,12 +3,14 @@ import { PrismaService } from '../../database/prisma.service';
 import { CategorizacaoService } from '../categorizacao/categorizacao.service';
 import { TransacoesService } from './transacoes.service';
 
+const U = 'u1';
+
 function montar() {
   const prisma = {
     transacao: {
       count: jest.fn().mockResolvedValue(0),
       findMany: jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn().mockResolvedValue(undefined),
     },
   };
@@ -27,24 +29,24 @@ function montar() {
 describe('TransacoesService.definirCategoria', () => {
   it('CA-12: categoria válida fixa MANUAL', async () => {
     const { prisma, service } = montar();
-    prisma.transacao.findUnique.mockResolvedValue({ id: 't1' });
+    prisma.transacao.findFirst.mockResolvedValue({ id: 't1' });
 
-    await expect(service.definirCategoria('t1', 'LAZER')).resolves.toEqual({
+    await expect(service.definirCategoria(U, 't1', 'LAZER')).resolves.toEqual({
       id: 't1',
       categoria: 'LAZER',
       origemCategoria: 'MANUAL',
     });
     expect(prisma.transacao.update).toHaveBeenCalledWith({
-      where: { id: 't1' },
+      where: { id: 't1', userId: U },
       data: { categoria: 'LAZER', origemCategoria: 'MANUAL' },
     });
   });
 
   it('CA-12: transação inexistente dá 404 TRANSACAO_NAO_ENCONTRADA', async () => {
     const { prisma, service } = montar();
-    prisma.transacao.findUnique.mockResolvedValue(null);
+    prisma.transacao.findFirst.mockResolvedValue(null);
 
-    const erro = await service.definirCategoria('x', 'LAZER').catch((e: unknown) => e);
+    const erro = await service.definirCategoria(U, 'x', 'LAZER').catch((e: unknown) => e);
 
     expect(erro).toBeInstanceOf(NotFoundException);
     expect((erro as NotFoundException).getResponse()).toMatchObject({
@@ -55,14 +57,14 @@ describe('TransacoesService.definirCategoria', () => {
 
   it('CA-14: null solta a manual e devolve o resultado das regras', async () => {
     const { prisma, categorizacao, service } = montar();
-    prisma.transacao.findUnique.mockResolvedValue({ id: 't1' });
+    prisma.transacao.findFirst.mockResolvedValue({ id: 't1' });
 
-    await expect(service.definirCategoria('t1', null)).resolves.toEqual({
+    await expect(service.definirCategoria(U, 't1', null)).resolves.toEqual({
       id: 't1',
       categoria: 'SAUDE',
       origemCategoria: 'REGRA_PADRAO',
     });
-    expect(categorizacao.categorizarUma).toHaveBeenCalledWith('t1');
+    expect(categorizacao.categorizarUma).toHaveBeenCalledWith(U, 't1');
   });
 });
 
@@ -85,9 +87,15 @@ describe('TransacoesService.listar', () => {
       },
     ]);
 
-    const r = await service.listar({ mes: '2026-09', categoria: 'MERCADO', limite: 2, pagina: 3 });
+    const r = await service.listar(U, {
+      mes: '2026-09',
+      categoria: 'MERCADO',
+      limite: 2,
+      pagina: 3,
+    });
 
     const where = {
+      userId: U,
       data: { gte: new Date('2026-09-01T00:00:00Z'), lt: new Date('2026-10-01T00:00:00Z') },
       categoria: 'MERCADO',
     };
@@ -105,10 +113,11 @@ describe('TransacoesService.listar', () => {
   it('dezembro fecha em janeiro do ano seguinte e os defaults são pagina 1 / limite 50', async () => {
     const { prisma, service } = montar();
 
-    const r = await service.listar({ mes: '2026-12' });
+    const r = await service.listar(U, { mes: '2026-12' });
 
     expect(prisma.transacao.count).toHaveBeenCalledWith({
       where: {
+        userId: U,
         data: { gte: new Date('2026-12-01T00:00:00Z'), lt: new Date('2027-01-01T00:00:00Z') },
       },
     });

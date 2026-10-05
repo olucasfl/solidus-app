@@ -1,6 +1,6 @@
 # Solidus
 
-App pessoal de finanças (single-user, somente leitura). Visão e decisões de produto em
+App de finanças pessoais (multiusuário em construção — spec 06; somente leitura). Visão e decisões de produto em
 [`docs/produto.md`](docs/produto.md); mapa para agentes em [`CLAUDE.md`](CLAUDE.md); guia técnico
 em [`ARCHITECTURE.md`](ARCHITECTURE.md).
 

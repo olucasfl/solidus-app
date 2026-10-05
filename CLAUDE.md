@@ -61,7 +61,7 @@ Definições em `.claude/commands/`; agentes em `.claude/agents/` (`bug-fixer`, 
 **Existe (Fase 1 completa, specs 01 a 04 em `docs/specs/INDEX.md`):** monorepo (pnpm, ESLint 9,
 Prettier, Husky, commitlint); backend NestJS com env validado no boot, guard global "nega por padrão"
 que agora valida o access token (JWT), Prisma com `User`, `RefreshSession`, `Conta`, `Transacao`,
-`SyncRun` e `RegraCategoria` (todas com RLS); auth do usuário único (login, refresh rotativo em cookie,
+`SyncRun` e `RegraCategoria` (todas com RLS); auth (login, refresh rotativo em cookie,
 logout, `me`); `POST /sync` do Pluggy (só leitura, protegido por `SYNC_CRON_TOKEN`); categorização por
 regras com taxonomia fechada; taxa de poupança mensal e histórico; Jest (unitário e e2e com Prisma
 mockado). `apps/web` é só um placeholder.

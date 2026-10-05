@@ -2,18 +2,20 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CategorizacaoService } from './categorizacao.service';
 
+const U = 'u1';
+
 function montar() {
   const prisma = {
     regraCategoria: {
       findMany: jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
       create: jest.fn(),
       deleteMany: jest.fn(),
     },
     transacao: {
       findMany: jest.fn().mockResolvedValue([]),
-      findUniqueOrThrow: jest.fn(),
+      findFirstOrThrow: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       update: jest.fn().mockResolvedValue(undefined),
     },
@@ -47,10 +49,11 @@ describe('CategorizacaoService — regras', () => {
       prioridade: 0,
     });
 
-    const r = await service.criarRegra({ padrao: 'padaria', categoria: 'MERCADO' });
+    const r = await service.criarRegra(U, { padrao: 'padaria', categoria: 'MERCADO' });
 
     expect(prisma.regraCategoria.create).toHaveBeenCalledWith({
       data: {
+        userId: U,
         padrao: 'padaria',
         categoria: 'MERCADO',
         tipo: null,
@@ -74,7 +77,7 @@ describe('CategorizacaoService — regras', () => {
     const { prisma, service } = montar();
 
     const erro = await service
-      .criarRegra({
+      .criarRegra(U, {
         padrao: 'x',
         categoria: 'SALARIO',
         valorMinCentavos: 200,
@@ -100,13 +103,13 @@ describe('CategorizacaoService — regras', () => {
 
     it('ajusta só a faixa (o salário subiu) e preserva o resto', async () => {
       const { prisma, service } = montar();
-      prisma.regraCategoria.findUnique.mockResolvedValue(regraBanco);
+      prisma.regraCategoria.findFirst.mockResolvedValue(regraBanco);
       prisma.regraCategoria.update.mockResolvedValue({ ...regraBanco, valorMaxCentavos: 300_000 });
 
-      const r = await service.atualizarRegra('r1', { valorMaxCentavos: 300_000 });
+      const r = await service.atualizarRegra(U, 'r1', { valorMaxCentavos: 300_000 });
 
       expect(prisma.regraCategoria.update).toHaveBeenCalledWith({
-        where: { id: 'r1' },
+        where: { id: 'r1', userId: U },
         data: { valorMinCentavos: 80_000, valorMaxCentavos: 300_000 },
       });
       expect(r.valorMaxCentavos).toBe(300_000);
@@ -114,7 +117,7 @@ describe('CategorizacaoService — regras', () => {
 
     it('null remove a faixa e o tipo', async () => {
       const { prisma, service } = montar();
-      prisma.regraCategoria.findUnique.mockResolvedValue(regraBanco);
+      prisma.regraCategoria.findFirst.mockResolvedValue(regraBanco);
       prisma.regraCategoria.update.mockResolvedValue({
         ...regraBanco,
         tipo: null,
@@ -122,23 +125,23 @@ describe('CategorizacaoService — regras', () => {
         valorMaxCentavos: null,
       });
 
-      await service.atualizarRegra('r1', {
+      await service.atualizarRegra(U, 'r1', {
         tipo: null,
         valorMinCentavos: null,
         valorMaxCentavos: null,
       });
 
       expect(prisma.regraCategoria.update).toHaveBeenCalledWith({
-        where: { id: 'r1' },
+        where: { id: 'r1', userId: U },
         data: { tipo: null, valorMinCentavos: null, valorMaxCentavos: null },
       });
     });
 
     it('rejeita faixa que ficaria invertida pela combinação com o que já existe', async () => {
       const { prisma, service } = montar();
-      prisma.regraCategoria.findUnique.mockResolvedValue(regraBanco);
+      prisma.regraCategoria.findFirst.mockResolvedValue(regraBanco);
 
-      await expect(service.atualizarRegra('r1', { valorMinCentavos: 200_000 })).rejects.toThrow(
+      await expect(service.atualizarRegra(U, 'r1', { valorMinCentavos: 200_000 })).rejects.toThrow(
         BadRequestException,
       );
       expect(prisma.regraCategoria.update).not.toHaveBeenCalled();
@@ -146,9 +149,9 @@ describe('CategorizacaoService — regras', () => {
 
     it('regra inexistente dá 404 REGRA_NAO_ENCONTRADA', async () => {
       const { prisma, service } = montar();
-      prisma.regraCategoria.findUnique.mockResolvedValue(null);
+      prisma.regraCategoria.findFirst.mockResolvedValue(null);
 
-      const erro = await service.atualizarRegra('x', { prioridade: 1 }).catch((e: unknown) => e);
+      const erro = await service.atualizarRegra(U, 'x', { prioridade: 1 }).catch((e: unknown) => e);
 
       expect(erro).toBeInstanceOf(NotFoundException);
       expect((erro as NotFoundException).getResponse()).toMatchObject({
@@ -161,7 +164,7 @@ describe('CategorizacaoService — regras', () => {
     const { prisma, service } = montar();
     prisma.regraCategoria.deleteMany.mockResolvedValue({ count: 0 });
 
-    const erro = await service.removerRegra('x').catch((e: unknown) => e);
+    const erro = await service.removerRegra(U, 'x').catch((e: unknown) => e);
 
     expect(erro).toBeInstanceOf(NotFoundException);
     expect((erro as NotFoundException).getResponse()).toMatchObject({
@@ -173,7 +176,7 @@ describe('CategorizacaoService — regras', () => {
     const { prisma, service } = montar();
     prisma.regraCategoria.deleteMany.mockResolvedValue({ count: 1 });
 
-    await expect(service.removerRegra('r1')).resolves.toBeUndefined();
+    await expect(service.removerRegra(U, 'r1')).resolves.toBeUndefined();
   });
 });
 
@@ -186,15 +189,15 @@ describe('CategorizacaoService — categorizar e recalcular', () => {
       linha({ id: 'c', categoriaPluggy: 'Groceries' }),
     ]);
 
-    const n = await service.categorizarPendentes();
+    const n = await service.categorizarPendentes(U);
 
     expect(n).toBe(3);
     expect(prisma.transacao.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { categoria: null } }),
+      expect.objectContaining({ where: { categoria: null, userId: U } }),
     );
     expect(prisma.transacao.updateMany).toHaveBeenCalledTimes(2);
     expect(prisma.transacao.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ['a', 'b'] } },
+      where: { id: { in: ['a', 'b'] }, userId: U },
       data: { categoria: 'PAGAMENTO_FATURA', origemCategoria: 'REGRA_PADRAO' },
     });
   });
@@ -202,7 +205,7 @@ describe('CategorizacaoService — categorizar e recalcular', () => {
   it('sem pendentes não consulta regras nem atualiza', async () => {
     const { prisma, service } = montar();
 
-    await expect(service.categorizarPendentes()).resolves.toBe(0);
+    await expect(service.categorizarPendentes(U)).resolves.toBe(0);
     expect(prisma.regraCategoria.findMany).not.toHaveBeenCalled();
     expect(prisma.transacao.updateMany).not.toHaveBeenCalled();
   });
@@ -233,16 +236,19 @@ describe('CategorizacaoService — categorizar e recalcular', () => {
     });
     prisma.transacao.findMany.mockResolvedValueOnce([mudou, igual]);
 
-    const primeira = await service.recalcular();
+    const primeira = await service.recalcular(U);
 
     expect(prisma.transacao.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { OR: [{ origemCategoria: null }, { origemCategoria: { not: 'MANUAL' } }] },
+        where: {
+          userId: U,
+          OR: [{ origemCategoria: null }, { origemCategoria: { not: 'MANUAL' } }],
+        },
       }),
     );
     expect(primeira).toEqual({ analisadas: 2, alteradas: 1 });
     expect(prisma.transacao.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ['b'] } },
+      where: { id: { in: ['b'] }, userId: U },
       data: { categoria: 'MERCADO', origemCategoria: 'REGRA_USUARIO' },
     });
 
@@ -251,13 +257,13 @@ describe('CategorizacaoService — categorizar e recalcular', () => {
       igual,
     ]);
     prisma.transacao.updateMany.mockClear();
-    await expect(service.recalcular()).resolves.toEqual({ analisadas: 2, alteradas: 0 });
+    await expect(service.recalcular(U)).resolves.toEqual({ analisadas: 2, alteradas: 0 });
     expect(prisma.transacao.updateMany).not.toHaveBeenCalled();
   });
 
   it('CA-14: categorizarUma reavalia por regra e grava a origem', async () => {
     const { prisma, service } = montar();
-    prisma.transacao.findUniqueOrThrow.mockResolvedValue(
+    prisma.transacao.findFirstOrThrow.mockResolvedValue(
       linha({
         id: 'a',
         categoriaPluggy: 'Pharmacy',
@@ -266,11 +272,11 @@ describe('CategorizacaoService — categorizar e recalcular', () => {
       }),
     );
 
-    const r = await service.categorizarUma('a');
+    const r = await service.categorizarUma(U, 'a');
 
     expect(r).toEqual({ categoria: 'SAUDE', origemCategoria: 'REGRA_PADRAO' });
     expect(prisma.transacao.update).toHaveBeenCalledWith({
-      where: { id: 'a' },
+      where: { id: 'a', userId: U },
       data: { categoria: 'SAUDE', origemCategoria: 'REGRA_PADRAO' },
     });
   });
