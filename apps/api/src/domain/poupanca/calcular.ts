@@ -40,6 +40,7 @@ export function calcularPoupanca(mes: string, grupos: readonly GrupoMovimento[])
   let transacoes = 0;
   let neutras = 0;
   const indefinidas = { quantidade: 0, entradasCentavos: 0, saidasCentavos: 0 };
+  const pixPessoas = { quantidade: 0, entradasCentavos: 0, saidasCentavos: 0 };
   const porCategoria = new Map<string, PoupancaCategoria>();
 
   for (const g of grupos) {
@@ -63,6 +64,13 @@ export function calcularPoupanca(mes: string, grupos: readonly GrupoMovimento[])
       somaDespesas += g.totalCentavos;
     } else if (natureza === 'NEUTRA') {
       neutras += g.quantidade;
+      if (g.categoria === 'PIX_RECEBIDO_DE_PESSOAS') {
+        pixPessoas.quantidade += g.quantidade;
+        pixPessoas.entradasCentavos += g.totalCentavos;
+      } else if (g.categoria === 'PIX_ENVIADO_PARA_PESSOAS') {
+        pixPessoas.quantidade += g.quantidade;
+        pixPessoas.saidasCentavos += -g.totalCentavos;
+      }
     } else {
       indefinidas.quantidade += g.quantidade;
       if (g.tipo === 'CREDITO') {
@@ -81,6 +89,7 @@ export function calcularPoupanca(mes: string, grupos: readonly GrupoMovimento[])
   if (transacoes === 0) avisos.push('SEM_TRANSACOES');
   if (!temReceita) avisos.push('SEM_RECEITA');
   if (indefinidas.entradasCentavos > 0) avisos.push('ENTRADAS_A_CLASSIFICAR');
+  if (pixPessoas.quantidade > 0) avisos.push('PIX_ENTRE_PESSOAS_FORA_DA_CONTA');
 
   return {
     mes,
@@ -91,6 +100,7 @@ export function calcularPoupanca(mes: string, grupos: readonly GrupoMovimento[])
     transacoes,
     neutras: { quantidade: neutras },
     indefinidas,
+    pixPessoas,
     porCategoria: [...porCategoria.values()].sort(
       (a, b) => Math.abs(b.totalCentavos) - Math.abs(a.totalCentavos),
     ),

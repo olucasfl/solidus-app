@@ -17,7 +17,6 @@ export const CATEGORIAS = [
   { id: 'DOACOES', nome: 'Doações', natureza: 'DESPESA' },
   { id: 'IMPOSTOS_TARIFAS', nome: 'Impostos e tarifas', natureza: 'DESPESA' },
   { id: 'SERVICOS', nome: 'Serviços', natureza: 'DESPESA' },
-  { id: 'TRANSFERENCIAS_ENVIADAS', nome: 'Transferências enviadas', natureza: 'DESPESA' },
   { id: 'OUTRAS_DESPESAS', nome: 'Outras despesas', natureza: 'DESPESA' },
   { id: 'SALARIO', nome: 'Salário', natureza: 'RECEITA' },
   { id: 'RENDIMENTOS_CASHBACK', nome: 'Rendimentos e cashback', natureza: 'RECEITA' },
@@ -25,6 +24,8 @@ export const CATEGORIAS = [
   { id: 'INVESTIMENTO', nome: 'Aplicações e resgates', natureza: 'NEUTRA' },
   { id: 'PAGAMENTO_FATURA', nome: 'Pagamento de fatura', natureza: 'NEUTRA' },
   { id: 'TRANSFERENCIA_INTERNA', nome: 'Entre contas próprias', natureza: 'NEUTRA' },
+  { id: 'PIX_RECEBIDO_DE_PESSOAS', nome: 'Pix recebido de pessoas', natureza: 'NEUTRA' },
+  { id: 'PIX_ENVIADO_PARA_PESSOAS', nome: 'Pix enviado para pessoas', natureza: 'NEUTRA' },
   { id: 'A_CLASSIFICAR', nome: 'A classificar', natureza: 'INDEFINIDA' },
 ] as const;
 
@@ -38,6 +39,7 @@ export function ehCategoriaId(valor: unknown): valor is CategoriaId {
   return typeof valor === 'string' && (CATEGORIA_IDS as readonly string[]).includes(valor);
 }
 
-export function naturezaDe(id: CategoriaId): NaturezaCategoria {
-  return CATEGORIAS.find((c) => c.id === id)!.natureza;
+/** Id desconhecido (ex.: categoria antiga que saiu da taxonomia) é INDEFINIDA, nunca um erro. */
+export function naturezaDe(id: string): NaturezaCategoria {
+  return CATEGORIAS.find((c) => c.id === id)?.natureza ?? 'INDEFINIDA';
 }

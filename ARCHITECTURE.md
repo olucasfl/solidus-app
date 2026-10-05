@@ -156,7 +156,7 @@ estrangeira usa `amountInAccountCurrency`; sem ele conta em `semConversao`.
 
 ### 4.7 `categorizacao` e `transacoes` (spec `03-categorizacao`)
 
-A taxonomia é **fechada e vive em `packages/shared/src/categoria.ts`** (22 categorias, cada uma com
+A taxonomia é **fechada e vive em `packages/shared/src/categoria.ts`** (23 categorias, cada uma com
 `natureza`: RECEITA, DESPESA, NEUTRA ou INDEFINIDA — é isso que a taxa de poupança usa). A
 categorização é regra pura em `domain/categorizacao/` (substring sem acento/caixa, **nunca regex**).
 Precedência: manual > regra do usuário (`RegraCategoria`, prioridade desc, empate = mais antiga) >
@@ -164,8 +164,11 @@ regra padrão > fallback (débito → `OUTRAS_DESPESAS`, crédito → `A_CLASSIF
 
 **Regras por descrição vêm antes do mapa de categorias do Pluggy**, porque o Pluggy classifica o
 "Pagamento de fatura" da conta corrente como `Transfers` (contaria a fatura duas vezes como
-despesa). Crédito `Transfers` vai para `A_CLASSIFICAR` de propósito: salário, reembolso e dinheiro
-de outra conta própria não são distinguíveis sem regra do usuário — o sistema não adivinha receita.
+despesa). Pix/transferência de e para pessoas (`Transfers` do Pluggy) tem categoria própria
+(`PIX_RECEBIDO_DE_PESSOAS` / `PIX_ENVIADO_PARA_PESSOAS`), **neutra por padrão** e sempre reportada à
+parte pela taxa de poupança: o app é global, então não presume que Pix recebido é renda nem que Pix
+enviado é gasto (aluguel, cliente, reembolso... só o usuário sabe) — ele cria uma regra para contá-lo.
+Entrada de conta própria e o que o sistema não entende continuam `A_CLASSIFICAR`: não adivinha receita.
 
 **Nada que dependa de valor ou de nome está fixo no código.** O que define "isso é salário" é regra
 do usuário (`RegraCategoria`), com faixa de valor opcional e editável por `PATCH /regras/:id` (salário
@@ -188,7 +191,9 @@ receitas`, em pontos-base inteiros (sem float no contrato); só categorias de na
 DESPESA entram — NEUTRA (fatura, aporte, transferência própria) fica fora, estorno reduz a despesa.
 **INDEFINIDA e sem categoria são reportadas à parte (`indefinidas`) e geram aviso
 `ENTRADAS_A_CLASSIFICAR`; receita zero devolve taxa `null` + `SEM_RECEITA`** — o número nunca é
-apresentado como confiável quando não é.
+apresentado como confiável quando não é. **Pix de e para pessoas** (neutros) saem em `pixPessoas`
+(quantidade, entradas, saídas) com o aviso `PIX_ENTRE_PESSOAS_FORA_DA_CONTA`: ficam fora da conta, mas
+nunca escondidos.
 
 ### 4.9 `carteira` (spec `05-carteira-caixinhas`)
 
@@ -199,16 +204,35 @@ líquido, sem depender do Pluggy (ADR 0006). **Nada concreto no código**: Caixi
 tabela legal conhecida (só se estiverem vazias; nunca sobrescrevem edição) e o cálculo só lê o banco.
 
 A conta é `domain/carteira/projetar.ts` (puro): saldo interno em **BigInt, centavos × 10¹²**, sem
-arredondar por dia (o Nubank não arredonda); só na saída vira centavos, **truncando**. Convenções
-(confirmar comparando com o app): o `SALDO` de um dia vale no fim dele; o rendimento do dia incide sobre
-o saldo do começo; aporte/resgate do dia entra depois do rendimento (aporte de hoje rende a partir de
-amanhã); só rende dia com CDI publicado; resgate consome os lotes mais antigos (FIFO). Líquido =
-estimativa "se resgatasse tudo hoje", por lote: IOF sobre o rendimento, IR sobre o que sobra, alíquotas
-pela idade do lote. CDI vem do BCB (série 12, % ao dia) por `POST /cdi/sincronizar` (token do cron),
-guardado como **inteiro × 10⁸** e convertido **por string** (`domain/carteira/bcb.ts`) — nunca `float`;
-formato inesperado é erro, não dado errado. A carteira (`GET /carteira`) nunca chama o BCB: avisa
-`CDI_DEFASADO` se o CDI gravado está velho. O Pluggy não diz de qual Caixinha é cada
-"Aplicação/Resgate RDB", então o sync só **sugere** (`GET /movimentos/sugestoes`) e o usuário vincula.
+arredondar por dia (o Nubank não arredonda); só na saída vira centavos, **truncando**. O `SALDO` de um
+dia vale no fim dele; só rende dia com CDI publicado; resgate consome os lotes mais antigos (FIFO).
+**Ordem entre movimento e rendimento no mesmo dia (`ConvencaoRendimento`):** o padrão é
+`MOVIMENTO_ANTES_DO_RENDIMENTO` (aporte rende desde o dia da aplicação; resgate não leva o rendimento do
+dia em que saiu — regra usual de RDB/CDB com liquidez diária), mas isso **varia por banco e não dá para
+garantir pela internet**, então é dado por Caixinha (`convencaoRendimento`, `null` = padrão) e o app
+**se confere sozinho**: `GET /caixinhas/:id/conferencia` compara, para cada par de saldos que o usuário
+já informou, o que estimaria com o que ele informou, nas duas convenções, e sugere a que erra menos
+(sem trabalho extra; se os saldos não distinguem, não sugere nada). Líquido = estimativa "se
+resgatasse tudo hoje", por lote: IOF sobre o rendimento, IR sobre o que sobra, alíquotas pela idade do
+lote.
+
+**CDI automático:** vem do BCB (SGS série 12, % ao dia) e se mantém sozinho — `CdiService`
+(`atualizarSeNecessario`) é chamado ao subir e a cada `GET /carteira`/conferência: se há movimento e o
+CDI gravado está atrasado (ou falta histórico), busca no BCB, no máximo uma tentativa a cada 15 min,
+uma por vez e com espera máxima de 5 s; se o BCB falhar, a carteira responde com o que tem e o aviso
+`CDI_DEFASADO`. O `POST /cdi/sincronizar` (token do cron) continua como reforço. Guardado como
+**inteiro × 10⁸** e convertido **por string** (`domain/carteira/bcb.ts`) — nunca `float`; formato
+inesperado é erro, não dado errado. Formato real da API conferido em 2026-10-05.
+
+**Alíquotas (verificadas em 2026-10-05):** IR regressivo de renda fixa — 22,5% até 180 dias, 20% de 181
+a 360, 17,5% de 361 a 720, 15% acima (confirmado na página oficial da Receita Federal "Tributação de
+2026", atualizada em 27/04/2026; a MP que tentou mudar isso caducou) — e IOF regressivo sobre o
+rendimento, 96% no 1º dia até 0% no 30º, "limitado ao rendimento" (Decreto 6.306/2007; confirmado em
+regulamentos de fundos na CVM/B3 e várias fontes; o anexo do decreto no Planalto não pôde ser lido
+diretamente). **Não existe feed oficial legível por máquina de alíquotas**: elas são dado editável
+(`PUT /impostos/:tipo`), semeado com estes valores, e mudam só por lei (anunciada com antecedência).
+O que muda todo dia — o CDI — é automático. O Pluggy não diz de qual Caixinha é cada "Aplicação/Resgate
+RDB", então o sync só **sugere** (`GET /movimentos/sugestoes`) e o usuário vincula.
 
 ## 5. Prisma e RLS
 

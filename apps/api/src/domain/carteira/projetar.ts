@@ -16,6 +16,19 @@ export interface FaixaImposto {
   aliquotaBp: number;
 }
 
+/**
+ * Em que ordem, no mesmo dia `d`, entram aporte/resgate e o rendimento do CDI de `d`.
+ * - ANTES: o movimento de `d` já conta no rendimento de `d` (aporte rende desde o dia da aplicação;
+ *   resgate NÃO leva o rendimento do dia em que saiu) — regra usual de RDB/CDB com liquidez diária.
+ * - DEPOIS: o rendimento de `d` vale para o saldo do começo do dia; o movimento só rende a partir de `d+1`.
+ * Não dá para saber pela internet qual é a de cada banco: o app compara com os saldos informados
+ * (`conferirCaixinha`) e o usuário pode trocar por Caixinha.
+ */
+export type ConvencaoRendimento =
+  'MOVIMENTO_ANTES_DO_RENDIMENTO' | 'MOVIMENTO_DEPOIS_DO_RENDIMENTO';
+
+export const CONVENCAO_PADRAO: ConvencaoRendimento = 'MOVIMENTO_ANTES_DO_RENDIMENTO';
+
 export type AvisoProjecao =
   'SEM_SALDO_INFORMADO' | 'CDI_DEFASADO' | 'IMPOSTO_NAO_CONFIGURADO' | 'RESGATE_ACIMA_DO_SALDO';
 
@@ -29,6 +42,8 @@ export interface ParametrosProjecao {
   ate: DataIso;
   iof: readonly FaixaImposto[];
   ir: readonly FaixaImposto[];
+  /** Padrão: `CONVENCAO_PADRAO`. */
+  convencao?: ConvencaoRendimento;
 }
 
 export interface ResultadoProjecao {
@@ -94,8 +109,7 @@ function ultimaDataDeCdi(cdi: ReadonlyMap<DataIso, number>): DataIso | null {
 /**
  * Saldo de uma Caixinha em `ate`, a partir do último SALDO informado. Convenções (spec 05):
  * - o SALDO de um dia vale no FIM daquele dia (movimentos do mesmo dia já estão nele);
- * - o rendimento do dia `d` incide sobre o saldo do começo de `d`, e aporte/resgate de `d` é aplicado
- *   depois — aporte de hoje começa a render amanhã;
+ * - a ordem entre movimento e rendimento no mesmo dia vem de `convencao` (ver `ConvencaoRendimento`);
  * - só rende dia com CDI publicado; resgate consome os lotes mais antigos primeiro (FIFO);
  * - o líquido (IOF sobre o rendimento, IR sobre rendimento − IOF) é por lote, pela idade do lote.
  */
@@ -128,19 +142,29 @@ export function projetarCaixinha(p: ParametrosProjecao): ResultadoProjecao {
   for (let i = 1; i <= dias; i += 1) {
     const dia = somarDias(ancora.data, i);
 
-    const taxa = p.cdi.get(dia);
-    if (taxa !== undefined) {
+    const rendimento = (): void => {
+      const taxa = p.cdi.get(dia);
+      if (taxa === undefined) return;
       const f = fatorNumerador(taxa);
       for (const lote of lotes) lote.saldo = (lote.saldo * f) / ESCALA;
-    }
-
-    for (const mov of depois.filter((m) => m.data === dia)) {
-      const valor = BigInt(mov.valorCentavos) * ESCALA;
-      if (mov.tipo === 'APORTE') {
-        lotes.push({ principal: valor, saldo: valor, origem: dia });
-      } else if (consumirFifo(lotes, valor)) {
-        avisos.add('RESGATE_ACIMA_DO_SALDO');
+    };
+    const movimentos = (): void => {
+      for (const mov of depois.filter((m) => m.data === dia)) {
+        const valor = BigInt(mov.valorCentavos) * ESCALA;
+        if (mov.tipo === 'APORTE') {
+          lotes.push({ principal: valor, saldo: valor, origem: dia });
+        } else if (consumirFifo(lotes, valor)) {
+          avisos.add('RESGATE_ACIMA_DO_SALDO');
+        }
       }
+    };
+
+    if ((p.convencao ?? CONVENCAO_PADRAO) === 'MOVIMENTO_ANTES_DO_RENDIMENTO') {
+      movimentos();
+      rendimento();
+    } else {
+      rendimento();
+      movimentos();
     }
   }
 

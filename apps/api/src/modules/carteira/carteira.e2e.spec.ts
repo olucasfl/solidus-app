@@ -111,6 +111,7 @@ describe('carteira por Caixinha (e2e)', () => {
       () => http().post('/caixinhas').send({ nome: 'x', percentualCdiBp: 0 }),
       () => http().patch(`/caixinhas/${UUID}`).send({ ativa: false }),
       () => http().delete(`/caixinhas/${UUID}`),
+      () => http().get(`/caixinhas/${UUID}/conferencia`),
       () => http().get(`/caixinhas/${UUID}/movimentos`),
       () =>
         http()
@@ -165,7 +166,12 @@ describe('carteira por Caixinha (e2e)', () => {
 
       expect(r.status).toBe(201);
       expect(prisma.caixinha.create).toHaveBeenCalledWith({
-        data: { nome: 'Turbo', percentualCdiBp: 11_500, reservaDeGastos: false },
+        data: {
+          nome: 'Turbo',
+          percentualCdiBp: 11_500,
+          reservaDeGastos: false,
+          convencaoRendimento: null,
+        },
       });
     });
   });
@@ -198,6 +204,53 @@ describe('carteira por Caixinha (e2e)', () => {
     expect((await http().delete(`/caixinhas/${UUID}`).set('Authorization', auth)).status).toBe(404);
     prisma.caixinha.deleteMany.mockResolvedValue({ count: 1 });
     expect((await http().delete(`/caixinhas/${UUID}`).set('Authorization', auth)).status).toBe(204);
+  });
+
+  describe('convenção de rendimento e conferência', () => {
+    it('PATCH aceita as duas convenções e null; texto desconhecido é 400', async () => {
+      prisma.caixinha.update.mockResolvedValue({
+        id: UUID,
+        nome: 'Turbo',
+        percentualCdiBp: 11_500,
+        reservaDeGastos: false,
+        convencaoRendimento: null,
+        ativa: true,
+      });
+      const patch = (corpo: object) =>
+        http().patch(`/caixinhas/${UUID}`).set('Authorization', auth).send(corpo);
+
+      expect((await patch({ convencaoRendimento: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO' })).status).toBe(
+        200,
+      );
+      expect((await patch({ convencaoRendimento: null })).status).toBe(200);
+      expect((await patch({ convencaoRendimento: 'OUTRA' })).status).toBe(400);
+    });
+
+    it('GET /caixinhas/:id/conferencia: 400 com id inválido, 404 inexistente, 200 sem saldos suficientes', async () => {
+      expect((await http().get('/caixinhas/x/conferencia').set('Authorization', auth)).status).toBe(
+        400,
+      );
+
+      prisma.caixinha.findUnique.mockResolvedValueOnce(null);
+      const nao = await http().get(`/caixinhas/${UUID}/conferencia`).set('Authorization', auth);
+      expect(nao.status).toBe(404);
+      expect(nao.body.code).toBe('CAIXINHA_NAO_ENCONTRADA');
+
+      prisma.caixinha.findUnique.mockResolvedValueOnce({
+        id: UUID,
+        percentualCdiBp: 10_000,
+        convencaoRendimento: null,
+        movimentos: [],
+      });
+      const ok = await http().get(`/caixinhas/${UUID}/conferencia`).set('Authorization', auth);
+      expect(ok.status).toBe(200);
+      expect(ok.body).toMatchObject({
+        caixinhaId: UUID,
+        convencaoEmUso: 'MOVIMENTO_ANTES_DO_RENDIMENTO',
+        convencaoSugerida: null,
+      });
+      expect(ok.body.porConvencao).toHaveLength(2);
+    });
   });
 
   describe('POST /caixinhas/:id/movimentos', () => {

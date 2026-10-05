@@ -20,6 +20,17 @@ uma informação e outra é **calculado** (CDI × percentual da Caixinha).
 constantes. O código só sabe _como calcular_; os números vêm de tabelas. Onde o sistema não tem como
 saber algo, ele **mostra o aviso** em vez de chutar.
 
+## Diretrizes do humano (2026-10-05, reforço)
+
+- **O app é para outras pessoas também, não só para o Lucas**: nada de valor, nome ou banco fixo no
+  código; tudo que varia por pessoa/banco é dado editável (Caixinhas, percentuais, convenção de
+  rendimento, tabelas de imposto).
+- **Tudo que não depende do usuário tem de se resolver sozinho e ser conferido, não suposto**: o CDI
+  se atualiza sozinho (nada de cron manual) e a convenção de rendimento é conferida contra os saldos
+  que o usuário já informa, em vez de exigir que ele compare com o app do banco.
+- As ações que dependem do usuário (criar as Caixinhas, informar saldos) são feitas pelo front-end,
+  quando existir.
+
 ## Respostas do humano que moldam a spec (2026-10-05)
 
 - 3 Caixinhas: a **Turbo** (> R$ 5 mil, **115% do CDI**) e duas de ~R$ 2 mil cada (**100% do CDI**).
@@ -53,9 +64,12 @@ posteriores a ele.
 ### Rendimento (bruto) — sem arredondar
 
 - Só rende dia **com CDI publicado** (dia útil); fim de semana e feriado não rendem.
-- Convenção diária (a confirmar contra o app, ver abaixo): o rendimento do dia `d` incide sobre o
-  saldo do **começo** de `d`; aporte/resgate do dia `d` é aplicado **depois** do rendimento de `d`
-  (aporte de hoje começa a render amanhã; resgate de hoje ainda leva o rendimento de hoje).
+- **Convenção diária (`ConvencaoRendimento`, por Caixinha):** o padrão é `MOVIMENTO_ANTES_DO_RENDIMENTO` —
+  o aporte do dia `d` já rende o CDI de `d` e o resgate do dia `d` **não** leva o rendimento de `d` (regra usual
+  de RDB/CDB com liquidez diária; o Nubank diz que o dinheiro rende desde o primeiro dia útil). A alternativa
+  é `MOVIMENTO_DEPOIS_DO_RENDIMENTO` (o movimento só rende a partir de `d+1`). Como isso varia por banco e
+  **não dá para garantir pela internet**, é dado da Caixinha (`convencaoRendimento`, `null` = padrão) e o app
+  **se confere sozinho** (próxima seção).
 - Fator do dia = `1 + CDI_dia × percentual`. Em inteiros: `CDI_dia` é guardado como inteiro ×10⁸
   (0,055131% a.d. → `55131`) e o percentual em pontos-base (115% → `11500`), então
   `saldo ← saldo × (10¹² + CDI_E8 × percentual_bp) / 10¹²`.
@@ -63,6 +77,14 @@ posteriores a ele.
   Só na **saída** vira centavos inteiros, **truncando** (o app do Nubank mostra o valor truncado; a
   confirmar, ver abaixo). Nunca `float` (`RULES.md` §2).
 - Se faltar CDI recente (último CDI com mais de 4 dias), a resposta traz o aviso `CDI_DEFASADO`.
+
+### Conferência automática (sem trabalho do usuário)
+
+`GET /caixinhas/:id/conferencia`: para cada par de `SALDO`s consecutivos que o usuário já informou, o app
+estima o segundo a partir do primeiro (com os aportes/resgates do meio), nas duas convenções, e mostra
+informado × estimado × diferença em centavos e a convenção que erra menos (`convencaoSugerida`, ou
+`null` se há menos de dois saldos ou se os saldos não distinguem as duas). O usuário só troca
+(`PATCH /caixinhas/:id` com `convencaoRendimento`) se a diferença da convenção em uso justificar.
 
 ### Rendimento líquido (estimativa de "se eu resgatasse tudo hoje")
 
@@ -92,28 +114,32 @@ das reservas. Percentual `0` = não rende (ex.: Gastos).
 
 ### CDI
 
-`POST /cdi/sincronizar` (chamado pelo cron, mesmo token do `/sync`) busca o CDI no BCB desde o dia
-mais antigo que importa (o menor entre o movimento mais antigo e o último CDI − 7 dias) e grava em
-`CdiDia` (idempotente: não duplica dia).
+**Automático:** ao subir e a cada `GET /carteira`/conferência, o `CdiService` verifica se há movimento
+e o CDI gravado está atrasado (último CDI com mais de 1 dia, ou histórico faltando) e, se estiver,
+busca no BCB — no máximo uma tentativa a cada 15 minutos, uma por vez, esperando no máximo 5 s; se o BCB
+falhar, a carteira responde com o que tem e o aviso `CDI_DEFASADO`. O `POST /cdi/sincronizar` (cron, mesmo
+token do `/sync`) continua como reforço. A busca vai do dia mais antigo que importa (o menor entre o
+movimento mais antigo e o último CDI − 7 dias) e grava em `CdiDia` (idempotente: não duplica dia).
 
 ## Requisitos de saída
 
 Tudo autenticado (`Authorization: Bearer`), exceto `POST /cdi/sincronizar` (header `x-sync-token`,
 `@Public()` só para o guard de usuário — mesma justificativa do `/sync`, ADR 0005).
 
-| Rota                                                  | Corpo / query                                                                      | Sucesso                                                       | Erros                                                                                                                                                                                                |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /caixinhas`                                      | —                                                                                  | **200** lista                                                 | —                                                                                                                                                                                                    |
-| `POST /caixinhas`                                     | `{ nome, percentualCdiBp, reservaDeGastos? }`                                      | **201**                                                       | 400                                                                                                                                                                                                  |
-| `PATCH /caixinhas/:id`                                | subconjunto de `{ nome, percentualCdiBp, reservaDeGastos, ativa }`                 | **200**                                                       | 400 · 404 `CAIXINHA_NAO_ENCONTRADA`                                                                                                                                                                  |
-| `DELETE /caixinhas/:id`                               | —                                                                                  | **204** (apaga os movimentos)                                 | 400 · 404                                                                                                                                                                                            |
-| `GET /caixinhas/:id/movimentos`                       | —                                                                                  | **200** em ordem de data                                      | 404                                                                                                                                                                                                  |
-| `POST /caixinhas/:id/movimentos`                      | `{ tipo: SALDO\|APORTE\|RESGATE, data, valorCentavos, dataOrigem?, transacaoId? }` | **201**                                                       | 400 (data futura, valor inválido, `dataOrigem` fora do `SALDO`/após a data) · 404 · 409 `TRANSACAO_JA_VINCULADA` · 422 `TRANSACAO_INVALIDA` (não existe, não é `INVESTIMENTO` ou o sentido não bate) |
-| `DELETE /movimentos/:id`                              | —                                                                                  | **204**                                                       | 400 · 404 `MOVIMENTO_NAO_ENCONTRADO`                                                                                                                                                                 |
-| `GET /movimentos/sugestoes`                           | `desde` (`YYYY-MM-DD`, obrigatório)                                                | **200** transações `INVESTIMENTO` não vinculadas desde a data | 400                                                                                                                                                                                                  |
-| `GET /impostos` · `PUT /impostos/:tipo` (`IR`\|`IOF`) | `{ faixas: [{ ateDias: number\|null, aliquotaBp }] }` (substitui a tabela do tipo) | **200**                                                       | 400 (ordem, duplicata, alíquota fora de 0–10000, só a última faixa pode ter `ateDias: null`)                                                                                                         |
-| `GET /carteira`                                       | `data?` (`YYYY-MM-DD`, padrão hoje; não futura)                                    | **200** `Carteira`                                            | 400                                                                                                                                                                                                  |
-| `POST /cdi/sincronizar`                               | —                                                                                  | **200** `{ dias, novos }`                                     | 401 `SYNC_TOKEN_INVALIDO` · 502 `CDI_INDISPONIVEL` · 429                                                                                                                                             |
+| Rota                                                  | Corpo / query                                                                                     | Sucesso                                                                   | Erros                                                                                                                                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /caixinhas`                                      | —                                                                                                 | **200** lista                                                             | —                                                                                                                                                                                                    |
+| `POST /caixinhas`                                     | `{ nome, percentualCdiBp, reservaDeGastos? }`                                                     | **201**                                                                   | 400                                                                                                                                                                                                  |
+| `PATCH /caixinhas/:id`                                | subconjunto de `{ nome, percentualCdiBp, reservaDeGastos, convencaoRendimento (ou null), ativa }` | **200**                                                                   | 400 · 404 `CAIXINHA_NAO_ENCONTRADA`                                                                                                                                                                  |
+| `DELETE /caixinhas/:id`                               | —                                                                                                 | **204** (apaga os movimentos)                                             | 400 · 404                                                                                                                                                                                            |
+| `GET /caixinhas/:id/conferencia`                      | —                                                                                                 | **200** `{ caixinhaId, convencaoEmUso, porConvencao, convencaoSugerida }` | 400 · 404                                                                                                                                                                                            |
+| `GET /caixinhas/:id/movimentos`                       | —                                                                                                 | **200** em ordem de data                                                  | 404                                                                                                                                                                                                  |
+| `POST /caixinhas/:id/movimentos`                      | `{ tipo: SALDO\|APORTE\|RESGATE, data, valorCentavos, dataOrigem?, transacaoId? }`                | **201**                                                                   | 400 (data futura, valor inválido, `dataOrigem` fora do `SALDO`/após a data) · 404 · 409 `TRANSACAO_JA_VINCULADA` · 422 `TRANSACAO_INVALIDA` (não existe, não é `INVESTIMENTO` ou o sentido não bate) |
+| `DELETE /movimentos/:id`                              | —                                                                                                 | **204**                                                                   | 400 · 404 `MOVIMENTO_NAO_ENCONTRADO`                                                                                                                                                                 |
+| `GET /movimentos/sugestoes`                           | `desde` (`YYYY-MM-DD`, obrigatório)                                                               | **200** transações `INVESTIMENTO` não vinculadas desde a data             | 400                                                                                                                                                                                                  |
+| `GET /impostos` · `PUT /impostos/:tipo` (`IR`\|`IOF`) | `{ faixas: [{ ateDias: number\|null, aliquotaBp }] }` (substitui a tabela do tipo)                | **200**                                                                   | 400 (ordem, duplicata, alíquota fora de 0–10000, só a última faixa pode ter `ateDias: null`)                                                                                                         |
+| `GET /carteira`                                       | `data?` (`YYYY-MM-DD`, padrão hoje; não futura)                                                   | **200** `Carteira`                                                        | 400                                                                                                                                                                                                  |
+| `POST /cdi/sincronizar`                               | —                                                                                                 | **200** `{ dias, novos }`                                                 | 401 `SYNC_TOKEN_INVALIDO` · 502 `CDI_INDISPONIVEL` · 429                                                                                                                                             |
 
 `Carteira`: `{ data, caixinhas: [{ id, nome, percentualCdiBp, reservaDeGastos, saldoInformado:
 { data, centavos } | null, saldoBrutoEstimadoCentavos, rendimentoBrutoCentavos, impostos: { iofCentavos,
@@ -131,11 +157,13 @@ model Caixinha {
   nome String @db.VarChar(60)
   percentualCdiBp Int            // 11500 = 115%; 0 = não rende
   reservaDeGastos Boolean @default(false)
+  convencaoRendimento ConvencaoRendimento?  // null = padrão do app
   ativa Boolean @default(true)
   criadoEm DateTime @default(now())
   atualizadoEm DateTime @updatedAt
   movimentos MovimentoCaixinha[]
 }
+enum ConvencaoRendimento { MOVIMENTO_ANTES_DO_RENDIMENTO MOVIMENTO_DEPOIS_DO_RENDIMENTO }
 enum TipoMovimentoCaixinha { SALDO APORTE RESGATE }
 model MovimentoCaixinha {
   id String @id @default(uuid())
@@ -221,18 +249,40 @@ lotes FIFO, alíquota por idade, impostos. Jest no mesmo commit, inclusive teste
       nunca é negativo por causa de resgate maior que o saldo (resgate excedente é limitado e avisado).
 - [x] **CA-21** — **Dado** as rotas autenticadas sem access token, **então** 401.
 - [x] **CA-22** — **Dado** as migrations, **então** `pnpm db:check-rls` passa.
+- [x] **CA-24** — **Dado** aporte no meio de dois saldos e um banco que rende desde o dia da aplicação,
+      **então** a conferência sugere `MOVIMENTO_ANTES_DO_RENDIMENTO` (erro 0); com um banco que só rende a
+      partir do dia seguinte, sugere `DEPOIS`; sem aporte/resgate no meio (empate) ou com menos de dois
+      saldos, não sugere nada; três saldos geram duas comparações.
+- [x] **CA-25** — **Dado** movimento e CDI atrasado (ou histórico faltando), **quando** a carteira é
+      consultada, **então** o CDI é buscado sozinho; sem movimento não busca; CDI de ontem está em dia; com o
+      BCB fora do ar nada lança e não insiste antes de 15 min; chamadas simultâneas compartilham uma busca;
+      a espera é limitada e o boot não espera.
+- [x] **CA-26** — **Dado** a resposta REAL do BCB capturada em 2026-10-05
+      (`[{"data":"30/09/2026","valor":"0.050788"}, ...]`), **então** vira `taxaE8 = 50788` por dia.
+- [x] **CA-27** — **Dado** uma Caixinha com `convencaoRendimento` definida, **então** a carteira usa a dela
+      (a padrão quando `null`); `PATCH` troca ou volta ao padrão com `null` e rejeita valor desconhecido.
 - [~] **CA-23 (real)** — **Dado** a API local, **quando** crio as Caixinhas, informo saldos e consulto
   `/carteira`, **então** responde coerente (com `CDI_DEFASADO` enquanto o CDI não puder ser
   sincronizado); a comparação **numérica** com o app do Nubank é do humano (ver abaixo).
 
-## Para o humano verificar (não dá para o agente provar sozinho)
+## O que foi verificado pelo agente (2026-10-05) e o que continua aberto
 
-1. **Alíquotas de IR/IOF**: são dados, semeados com o que o agente conhece da legislação. Confira
-   (`GET /impostos`) e corrija pelo `PUT` se divergir.
-2. **Convenção do dia de rendimento e truncamento**: informe o saldo de uma Caixinha hoje e, alguns dias
-   depois, compare `GET /carteira` com o app. Se divergir de centavos, é a convenção (CA-05) ou o
-   truncamento — me diga qual lado errou que ajusto.
-3. **API do BCB**: o agente não conseguiu acessá-la; o primeiro `POST /cdi/sincronizar` real é a prova.
+1. **Alíquotas de IR/IOF — verificadas.** IR: página oficial da Receita Federal ("Tributação de 2026",
+   atualizada em 27/04/2026) — 22,5% até 180 dias, 20% de 180 a 360, 17,5% de 361 a 720, 15% acima; a MP que
+   tentou mudar a renda fixa caducou. IOF: 96% no 1º dia até 0% no 30º, sobre o rendimento (Decreto
+   6.306/2007; confirmado em regulamentos de fundos na CVM e B3 e em várias fontes; o anexo no Planalto não
+   pôde ser lido diretamente). Não existe feed oficial legível por máquina: as alíquotas são **dado editável**
+   (`PUT /impostos/:tipo`) semeado com esses valores. Só mudam por lei.
+2. **API do BCB — verificada.** A série 12 respondeu e o formato real (capturado e usado em teste, CA-26)
+   é o que o parser espera. O ambiente de desenvolvimento não alcança o BCB a partir do Node, então a
+   _busca automática ponta a ponta_ nunca rodou aqui; o front/produção fará a primeira, e `CDI_DEFASADO`
+   avisa se falhar.
+3. **Convenção de rendimento — não verificável sem os saldos do usuário.** O app se confere sozinho
+   (CA-24). Nenhuma ação extra do usuário além de informar saldos pelo front-end.
+4. **Planos/porcentagens variam e mudam** (o Nubank, p. ex., só dá 115% do CDI à Caixinha Turbo com
+   movimentação mensal e pode pagar 120% a clientes de planos pagos): por isso o percentual é dado da
+   Caixinha. Limitação conhecida: o percentual é um só por Caixinha; se mudar, informe um novo `SALDO`
+   (o cálculo recomeça dele).
 
 ## Plano de testes
 
@@ -256,7 +306,8 @@ Nenhuma bloqueante (as 5 da v1 foram respondidas). Veja "Para o humano verificar
 
 ## Suposições
 
-- FIFO nos resgates e rendimento depois do aporte no dia seguinte (convenção acima).
+- FIFO nos resgates; convenção de rendimento padrão `ANTES` (o aporte rende desde o dia), conferida e
+  ajustável por Caixinha.
 - `SALDO` sem `dataOrigem` conta como lote novo na data informada (líquido conservador).
 - Truncar (não arredondar) o valor exibido; dia sem CDI não rende (inclui feriado).
 - Resgate maior que o saldo é limitado ao saldo e gera aviso, em vez de saldo negativo.

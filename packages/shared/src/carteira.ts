@@ -4,6 +4,10 @@ export type TipoMovimentoCaixinha = 'SALDO' | 'APORTE' | 'RESGATE';
 export type AvisoCarteira =
   'SEM_SALDO_INFORMADO' | 'CDI_DEFASADO' | 'IMPOSTO_NAO_CONFIGURADO' | 'RESGATE_ACIMA_DO_SALDO';
 
+/** Ordem, no mesmo dia, entre aporte/resgate e o rendimento do CDI (ver spec 05). */
+export type ConvencaoRendimento =
+  'MOVIMENTO_ANTES_DO_RENDIMENTO' | 'MOVIMENTO_DEPOIS_DO_RENDIMENTO';
+
 export interface Caixinha {
   id: string;
   nome: string;
@@ -11,6 +15,8 @@ export interface Caixinha {
   percentualCdiBp: number;
   /** Conta no patrimônio, mas é verba para gastar no mês (não é "investido"). */
   reservaDeGastos: boolean;
+  /** `null` = convenção padrão do app. */
+  convencaoRendimento: ConvencaoRendimento | null;
   ativa: boolean;
 }
 
@@ -18,12 +24,15 @@ export interface CriarCaixinhaRequest {
   nome: string;
   percentualCdiBp: number;
   reservaDeGastos?: boolean;
+  convencaoRendimento?: ConvencaoRendimento;
 }
 
 export interface AtualizarCaixinhaRequest {
   nome?: string;
   percentualCdiBp?: number;
   reservaDeGastos?: boolean;
+  /** `null` volta para a convenção padrão. */
+  convencaoRendimento?: ConvencaoRendimento | null;
   ativa?: boolean;
 }
 
@@ -116,3 +125,28 @@ export type CarteiraErrorCode =
   | 'TRANSACAO_JA_VINCULADA'
   | 'TRANSACAO_INVALIDA'
   | 'CDI_INDISPONIVEL';
+
+export interface ComparacaoSaldo {
+  /** SALDO anterior (de onde a estimativa parte) e SALDO seguinte (o que o usuário informou). */
+  de: string;
+  ate: string;
+  informadoCentavos: number;
+  estimadoCentavos: number;
+  /** informado − estimado: positivo = o banco pagou mais do que o app estimou. */
+  diferencaCentavos: number;
+}
+
+export interface ConferenciaPorConvencao {
+  convencao: ConvencaoRendimento;
+  comparacoes: ComparacaoSaldo[];
+  erroAbsolutoTotalCentavos: number;
+}
+
+/** O app se confere com os saldos que o usuário já informou: sem trabalho extra. */
+export interface ConferenciaCaixinha {
+  caixinhaId: string;
+  convencaoEmUso: ConvencaoRendimento;
+  porConvencao: ConferenciaPorConvencao[];
+  /** A que erra menos; `null` se ainda não há dois saldos ou os saldos não distinguem as duas. */
+  convencaoSugerida: ConvencaoRendimento | null;
+}

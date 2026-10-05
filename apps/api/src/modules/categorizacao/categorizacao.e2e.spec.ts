@@ -106,7 +106,7 @@ describe('categorização e transações (e2e)', () => {
     const r = await http().get('/categorias').set('Authorization', auth);
 
     expect(r.status).toBe(200);
-    expect(r.body).toHaveLength(22);
+    expect(r.body).toHaveLength(23);
     expect(r.body[0]).toEqual({ id: 'MORADIA', nome: 'Moradia', natureza: 'DESPESA' });
   });
 

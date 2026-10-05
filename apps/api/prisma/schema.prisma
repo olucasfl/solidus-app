@@ -153,16 +153,25 @@ model RegraCategoria {
 // alíquotas de IR/IOF são dados editáveis. Dinheiro em centavos (Int); CDI como inteiro x10^8. ---
 
 model Caixinha {
-  id              String              @id @default(uuid())
-  nome            String              @db.VarChar(60)
+  id                  String               @id @default(uuid())
+  nome                String               @db.VarChar(60)
   // 11500 = 115% do CDI; 0 = não rende
-  percentualCdiBp Int
+  percentualCdiBp     Int
   // conta no patrimônio, mas é verba para gastar no mês (não é "investido")
-  reservaDeGastos Boolean             @default(false)
-  ativa           Boolean             @default(true)
-  criadoEm        DateTime            @default(now())
-  atualizadoEm    DateTime            @updatedAt
-  movimentos      MovimentoCaixinha[]
+  reservaDeGastos     Boolean              @default(false)
+  // null = convenção padrão do app; o usuário muda se a conferência (GET /caixinhas/:id/conferencia)
+  // mostrar que o banco dele credita de outro jeito
+  convencaoRendimento ConvencaoRendimento?
+  ativa               Boolean              @default(true)
+  criadoEm            DateTime             @default(now())
+  atualizadoEm        DateTime             @updatedAt
+  movimentos          MovimentoCaixinha[]
+}
+
+// Em que ordem, no mesmo dia, entram aporte/resgate e o rendimento do CDI.
+enum ConvencaoRendimento {
+  MOVIMENTO_ANTES_DO_RENDIMENTO
+  MOVIMENTO_DEPOIS_DO_RENDIMENTO
 }
 
 enum TipoMovimentoCaixinha {

@@ -1,6 +1,7 @@
 import * as relogio from '../../common/relogio';
 import { PrismaService } from '../../database/prisma.service';
 import { CarteiraService } from './carteira.service';
+import { CdiService } from './cdi.service';
 import { ImpostosService } from './impostos.service';
 
 const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
@@ -32,11 +33,13 @@ function montar(faixas: { IOF: unknown[]; IR: unknown[] } = { IOF: [], IR: [] })
   const impostos = {
     faixas: jest.fn((tipo: 'IOF' | 'IR') => Promise.resolve(faixas[tipo])),
   };
+  const cdiService = { atualizarSeNecessario: jest.fn().mockResolvedValue(undefined) };
   const service = new CarteiraService(
     prisma as unknown as PrismaService,
     impostos as unknown as ImpostosService,
+    cdiService as unknown as CdiService,
   );
-  return { prisma, service };
+  return { prisma, cdiService, service };
 }
 
 beforeEach(() => {
@@ -45,6 +48,14 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('CarteiraService.consultar', () => {
+  it('antes de calcular, deixa o CDI em dia sozinho (sem o usuário rodar nada)', async () => {
+    const { cdiService, service } = montar();
+
+    await service.consultar();
+
+    expect(cdiService.atualizarSeNecessario).toHaveBeenCalledTimes(1);
+  });
+
   it('sem Caixinhas: totais zerados e nenhum aviso', async () => {
     const { service } = montar();
 
@@ -141,6 +152,25 @@ describe('CarteiraService.consultar', () => {
     });
   });
 
+  it('usa a convenção própria da Caixinha quando definida (e a padrão quando null)', async () => {
+    const movimentos = [
+      saldo('2026-10-03', 100_000),
+      { tipo: 'APORTE', data: d('2026-10-05'), valorCentavos: 100_000, dataOrigem: null },
+    ];
+    const { prisma, service } = montar();
+    prisma.caixinha.findMany.mockResolvedValue([
+      caixinha({ id: 'antes', movimentos }),
+      caixinha({ id: 'depois', convencaoRendimento: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO', movimentos }),
+    ]);
+    prisma.cdiDia.findMany.mockResolvedValue([{ data: d('2026-10-05'), taxaE8: 1_000_000 }]);
+
+    const r = await service.consultar();
+
+    // 1% no dia: ANTES rende sobre os 200.000; DEPOIS só sobre os 100.000 antigos.
+    expect(r.caixinhas.find((c) => c.id === 'antes')!.saldoBrutoEstimadoCentavos).toBe(202_000);
+    expect(r.caixinhas.find((c) => c.id === 'depois')!.saldoBrutoEstimadoCentavos).toBe(201_000);
+  });
+
   it('rejeita data futura e data inexistente', async () => {
     const { service } = montar();
 
@@ -149,6 +179,51 @@ describe('CarteiraService.consultar', () => {
     });
     await expect(service.consultar('2026-02-30')).rejects.toMatchObject({
       response: { code: 'DATA_INVALIDA' },
+    });
+  });
+});
+
+describe('CarteiraService.conferir', () => {
+  it('404 se a Caixinha não existe', async () => {
+    const { prisma, service } = montar();
+    (prisma as unknown as { caixinha: { findUnique: jest.Mock } }).caixinha.findUnique = jest
+      .fn()
+      .mockResolvedValue(null);
+
+    await expect(service.conferir('x')).rejects.toMatchObject({
+      response: { code: 'CAIXINHA_NAO_ENCONTRADA' },
+    });
+  });
+
+  it('compara os saldos informados e sugere a convenção que erra menos', async () => {
+    const { prisma, cdiService, service } = montar();
+    (prisma as unknown as { caixinha: { findUnique: jest.Mock } }).caixinha.findUnique = jest
+      .fn()
+      .mockResolvedValue(
+        caixinha({
+          movimentos: [
+            saldo('2026-01-01', 100_000),
+            { tipo: 'APORTE', data: d('2026-01-02'), valorCentavos: 50_000, dataOrigem: null },
+            saldo('2026-01-05', 150_300),
+          ],
+        }),
+      );
+    prisma.cdiDia.findMany.mockResolvedValue([
+      { data: d('2026-01-02'), taxaE8: 100_000 },
+      { data: d('2026-01-05'), taxaE8: 100_000 },
+    ]);
+
+    const r = await service.conferir('c1');
+
+    expect(cdiService.atualizarSeNecessario).toHaveBeenCalled();
+    expect(r.convencaoEmUso).toBe('MOVIMENTO_ANTES_DO_RENDIMENTO');
+    expect(r.convencaoSugerida).toBe('MOVIMENTO_ANTES_DO_RENDIMENTO');
+    expect(r.porConvencao[0]!.comparacoes[0]).toMatchObject({
+      de: '2026-01-01',
+      ate: '2026-01-05',
+      informadoCentavos: 150_300,
+      estimadoCentavos: 150_300,
+      diferencaCentavos: 0,
     });
   });
 });

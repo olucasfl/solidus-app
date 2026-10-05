@@ -26,6 +26,8 @@ const trim = ({ value }: { value: unknown }): unknown =>
 const booleanoCru = ({ obj, key }: { obj: Record<string, unknown>; key: string }): unknown =>
   obj[key];
 
+const CONVENCOES = ['MOVIMENTO_ANTES_DO_RENDIMENTO', 'MOVIMENTO_DEPOIS_DO_RENDIMENTO'] as const;
+
 export class CriarCaixinhaDto {
   @Transform(trim)
   @IsString()
@@ -42,6 +44,10 @@ export class CriarCaixinhaDto {
   @Transform(booleanoCru)
   @IsBoolean()
   reservaDeGastos?: boolean;
+
+  @IsOptional()
+  @IsIn(CONVENCOES)
+  convencaoRendimento?: (typeof CONVENCOES)[number];
 }
 
 export class AtualizarCaixinhaDto {
@@ -61,6 +67,12 @@ export class AtualizarCaixinhaDto {
   @Transform(booleanoCru)
   @IsBoolean()
   reservaDeGastos?: boolean;
+
+  // null volta para a convenção padrão
+  @IsOptional()
+  @ValidateIf((o: AtualizarCaixinhaDto) => o.convencaoRendimento !== null)
+  @IsIn(CONVENCOES)
+  convencaoRendimento?: (typeof CONVENCOES)[number] | null;
 
   @IsOptional()
   @Transform(booleanoCru)

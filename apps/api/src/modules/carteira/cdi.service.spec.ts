@@ -108,3 +108,109 @@ describe('CdiService.sincronizar (CA-18)', () => {
     });
   });
 });
+
+describe('CdiService.atualizarSeNecessario — o CDI se mantém sozinho', () => {
+  const AGORA = 1_800_000_000_000;
+
+  function pronto(opcoes: {
+    movimento?: string | null;
+    primeiroCdi?: string | null;
+    ultimoCdi?: string | null;
+  }) {
+    const m = montar();
+    m.prisma.movimentoCaixinha.aggregate.mockResolvedValue({
+      _min: { data: opcoes.movimento ? d(opcoes.movimento) : null },
+    });
+    m.prisma.cdiDia.aggregate.mockResolvedValue({
+      _min: { data: opcoes.primeiroCdi ? d(opcoes.primeiroCdi) : null },
+      _max: { data: opcoes.ultimoCdi ? d(opcoes.ultimoCdi) : null },
+    });
+    jest.spyOn(Date, 'now').mockReturnValue(AGORA);
+    return m;
+  }
+
+  it('sem nenhum movimento não há o que calcular: não busca', async () => {
+    const { gateway, service } = pronto({ movimento: null });
+
+    await service.atualizarSeNecessario();
+
+    expect(gateway.buscar).not.toHaveBeenCalled();
+  });
+
+  it('com movimento e nenhum CDI gravado: busca', async () => {
+    const { gateway, service } = pronto({ movimento: '2026-09-01' });
+
+    await service.atualizarSeNecessario();
+
+    expect(gateway.buscar).toHaveBeenCalledTimes(1);
+  });
+
+  it('CDI de ontem está em dia; de dois dias atrás ou mais está velho', async () => {
+    const emDia = pronto({
+      movimento: '2026-09-01',
+      primeiroCdi: '2026-08-01',
+      ultimoCdi: '2026-10-04',
+    });
+    await emDia.service.atualizarSeNecessario();
+    expect(emDia.gateway.buscar).not.toHaveBeenCalled();
+
+    const velho = pronto({
+      movimento: '2026-09-01',
+      primeiroCdi: '2026-08-01',
+      ultimoCdi: '2026-10-02',
+    });
+    await velho.service.atualizarSeNecessario();
+    expect(velho.gateway.buscar).toHaveBeenCalledTimes(1);
+  });
+
+  it('movimento mais antigo que o primeiro CDI gravado: busca o histórico que falta', async () => {
+    const { gateway, service } = pronto({
+      movimento: '2026-02-01',
+      primeiroCdi: '2026-06-01',
+      ultimoCdi: '2026-10-05',
+    });
+
+    await service.atualizarSeNecessario();
+
+    expect(gateway.buscar).toHaveBeenCalledWith('2026-02-01', '2026-10-05');
+  });
+
+  it('BCB fora do ar: nunca lança e não insiste antes de 15 minutos', async () => {
+    const { gateway, service } = pronto({ movimento: '2026-09-01' });
+    gateway.buscar.mockRejectedValue(new CdiIndisponivelError());
+
+    await expect(service.atualizarSeNecessario()).resolves.toBeUndefined();
+    await service.atualizarSeNecessario();
+    expect(gateway.buscar).toHaveBeenCalledTimes(1);
+
+    jest.spyOn(Date, 'now').mockReturnValue(AGORA + 16 * 60 * 1000);
+    await service.atualizarSeNecessario();
+    expect(gateway.buscar).toHaveBeenCalledTimes(2);
+  });
+
+  it('chamadas simultâneas compartilham uma única busca', async () => {
+    const { gateway, service } = pronto({ movimento: '2026-09-01' });
+
+    await Promise.all([service.atualizarSeNecessario(), service.atualizarSeNecessario()]);
+
+    expect(gateway.buscar).toHaveBeenCalledTimes(1);
+  });
+
+  it('espera no máximo o tempo dado e segue com o que tem (o boot não espera: 0)', async () => {
+    const { gateway, service } = pronto({ movimento: '2026-09-01' });
+    gateway.buscar.mockReturnValue(new Promise(() => undefined)); // nunca responde
+
+    await expect(service.atualizarSeNecessario(20)).resolves.toBeUndefined();
+    expect(gateway.buscar).toHaveBeenCalledTimes(1);
+  });
+
+  it('ao subir, tenta deixar o CDI em dia sem bloquear', async () => {
+    const { gateway, service } = pronto({ movimento: '2026-09-01' });
+
+    service.onApplicationBootstrap();
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    expect(gateway.buscar).toHaveBeenCalledTimes(1);
+  });
+});

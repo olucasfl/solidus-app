@@ -105,8 +105,12 @@ describe('projetarCaixinha — movimentos', () => {
     ['2026-01-05', UM_MIL_E_UM],
   ]);
 
-  it('CA-05: aporte só começa a render no dia seguinte', () => {
-    const base = { movimentos: [saldo('2026-01-01', 100_000), aporte('2026-01-02', 50_000)], cdi };
+  it('CA-05 (DEPOIS): aporte só começa a render no dia seguinte', () => {
+    const base = {
+      movimentos: [saldo('2026-01-01', 100_000), aporte('2026-01-02', 50_000)],
+      cdi,
+      convencao: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO' as const,
+    };
 
     // no próprio dia: o saldo antigo rendeu (100.100) e o aporte entra inteiro, sem render
     expect(proj({ ...base, ate: '2026-01-02' }).saldoBrutoCentavos).toBe(150_100);
@@ -114,14 +118,36 @@ describe('projetarCaixinha — movimentos', () => {
     expect(proj({ ...base, ate: '2026-01-05' }).saldoBrutoCentavos).toBe(150_250);
   });
 
-  it('CA-05: resgate no dia ainda leva o rendimento do dia e só depois reduz', () => {
+  it('CA-05 (ANTES, o padrão): o aporte rende desde o dia da aplicação', () => {
+    const base = { movimentos: [saldo('2026-01-01', 100_000), aporte('2026-01-02', 50_000)], cdi };
+
+    // (100.000 + 50.000) x 1,001 = 150.150 já no dia do aporte
+    expect(proj({ ...base, ate: '2026-01-02' }).saldoBrutoCentavos).toBe(150_150);
+    expect(
+      proj({ ...base, ate: '2026-01-02', convencao: 'MOVIMENTO_ANTES_DO_RENDIMENTO' }),
+    ).toEqual(proj({ ...base, ate: '2026-01-02' }));
+  });
+
+  it('CA-05 (DEPOIS): resgate no dia ainda leva o rendimento do dia e só depois reduz', () => {
+    const r = proj({
+      movimentos: [saldo('2026-01-01', 100_000), resgate('2026-01-02', 40_000)],
+      cdi,
+      ate: '2026-01-02',
+      convencao: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO',
+    });
+
+    expect(r.saldoBrutoCentavos).toBe(60_100);
+  });
+
+  it('CA-05 (ANTES, o padrão): o resgate sai antes e não leva o rendimento do dia', () => {
     const r = proj({
       movimentos: [saldo('2026-01-01', 100_000), resgate('2026-01-02', 40_000)],
       cdi,
       ate: '2026-01-02',
     });
 
-    expect(r.saldoBrutoCentavos).toBe(60_100);
+    // (100.000 − 40.000) x 1,001 = 60.060
+    expect(r.saldoBrutoCentavos).toBe(60_060);
   });
 
   it('CA-06: vale o SALDO mais recente; tudo antes dele é ignorado', () => {
@@ -168,6 +194,7 @@ describe('projetarCaixinha — movimentos', () => {
       ],
       cdi: new Map([['2026-01-02', UM_MIL_E_UM]]),
       ate: '2026-01-03',
+      convencao: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO',
     });
 
     // lote 1 = 100.100 inteiro; sobram 19.900 a tirar do aporte (50.000): ficam 30.100
@@ -180,6 +207,7 @@ describe('projetarCaixinha — movimentos', () => {
       movimentos: [saldo('2026-01-01', 100_000), resgate('2026-01-02', 50_050)],
       cdi: new Map([['2026-01-02', UM_MIL_E_UM]]),
       ate: '2026-01-02',
+      convencao: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO',
     });
 
     expect(r.saldoBrutoCentavos).toBe(50_050);

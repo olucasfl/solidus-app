@@ -68,7 +68,9 @@ function padraoPorTipo(entrada: EntradaCategorizacao): CategoriaId | null {
 
   if (pluggy === 'cashback' && entrada.tipo === 'CREDITO') return 'RENDIMENTOS_CASHBACK';
   if (pluggy === 'transfers' || pluggy === 'third party transfers') {
-    return entrada.tipo === 'CREDITO' ? 'A_CLASSIFICAR' : 'TRANSFERENCIAS_ENVIADAS';
+    // Transferência para/de pessoas (Pix): nem renda nem despesa por padrão — o usuário decide
+    // caso a caso com uma regra (aluguel, cliente, reembolso...). É reportada à parte.
+    return entrada.tipo === 'CREDITO' ? 'PIX_RECEBIDO_DE_PESSOAS' : 'PIX_ENVIADO_PARA_PESSOAS';
   }
   return CATEGORIA_PLUGGY[pluggy] ?? null;
 }

@@ -31,7 +31,12 @@ spec 03).
   zero nem infinito.
 - **Avisos** (`avisos`, códigos fixos): `SEM_TRANSACOES` (mês sem nenhuma transação),
   `SEM_RECEITA`, `ENTRADAS_A_CLASSIFICAR` (há entrada indefinida > 0: a receita pode estar
-  subestimada e a taxa, portanto, é um limite inferior duvidoso).
+  subestimada e a taxa, portanto, é um limite inferior duvidoso) e `PIX_ENTRE_PESSOAS_FORA_DA_CONTA`
+  (há Pix de/para pessoas no mês: ficam fora da conta, por serem neutros, mas aparecem em `pixPessoas`).
+- **Pix de e para pessoas** (categorias `PIX_RECEBIDO_DE_PESSOAS`/`PIX_ENVIADO_PARA_PESSOAS`, spec 03) são
+  neutros: não entram em receitas nem em despesas, mas `pixPessoas` traz quantidade, entradas e saídas.
+  Quem quiser contar um Pix específico cria uma regra de categoria (aluguel → `MORADIA`, cliente →
+  `OUTRAS_RECEITAS`).
 - Transações `PENDENTE` entram (compra no cartão pendente já é gasto). Mês = calendário em **UTC**,
   mesmo critério de `GET /transacoes?mes=` (suposição abaixo).
 - `porCategoria` lista, para o mês, cada categoria com movimento: `{ categoria, natureza,
@@ -55,9 +60,10 @@ PoupancaMes = {
   transacoes: number;                       // todas as do mês, qualquer natureza
   neutras: { quantidade: number };
   indefinidas: { quantidade: number; entradasCentavos: number; saidasCentavos: number };
+  pixPessoas: { quantidade: number; entradasCentavos: number; saidasCentavos: number };
   porCategoria: { categoria: CategoriaId | 'SEM_CATEGORIA'; natureza: NaturezaCategoria;
                   quantidade: number; totalCentavos: number }[];
-  avisos: ('SEM_TRANSACOES' | 'SEM_RECEITA' | 'ENTRADAS_A_CLASSIFICAR')[];
+  avisos: ('SEM_TRANSACOES' | 'SEM_RECEITA' | 'ENTRADAS_A_CLASSIFICAR' | 'PIX_ENTRE_PESSOAS_FORA_DA_CONTA')[];
 }
 ```
 
@@ -109,6 +115,9 @@ centavos inteiros (`RULES §2`), com Jest no mesmo commit — inclusive teste de
       → 400.
 - [x] **CA-12** — **Dado** o mesmo mês pedido por `/poupanca` e por `/poupanca/historico`, **então** o
       resultado é idêntico (mesmo cálculo).
+- [x] **CA-04b** — **Dado** Pix recebido de e enviado para pessoas no mês, **então** não alteram receitas
+      nem despesas, `pixPessoas` traz quantidade/entradas/saídas e `avisos` contém
+      `PIX_ENTRE_PESSOAS_FORA_DA_CONTA`; sem Pix entre pessoas não há aviso.
 - [x] **CA-13** — **Dado** 200 conjuntos aleatórios de movimentos, **então** todos os números de
       saída são inteiros e `receitas − despesas = poupança` sempre.
 - [x] **CA-14 (real)** — **Dado** a API local com as 1364 transações categorizadas, **então**

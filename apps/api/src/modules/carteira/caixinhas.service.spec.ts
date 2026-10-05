@@ -42,6 +42,7 @@ const caixinhaBanco = {
   nome: 'Turbo',
   percentualCdiBp: 11_500,
   reservaDeGastos: false,
+  convencaoRendimento: null,
   ativa: true,
   criadoEm: new Date(),
   atualizadoEm: new Date(),
@@ -55,13 +56,19 @@ describe('CaixinhasService — Caixinhas (CA-13)', () => {
     const r = await service.criar({ nome: 'Turbo', percentualCdiBp: 11_500 });
 
     expect(prisma.caixinha.create).toHaveBeenCalledWith({
-      data: { nome: 'Turbo', percentualCdiBp: 11_500, reservaDeGastos: false },
+      data: {
+        nome: 'Turbo',
+        percentualCdiBp: 11_500,
+        reservaDeGastos: false,
+        convencaoRendimento: null,
+      },
     });
     expect(r).toEqual({
       id: 'c1',
       nome: 'Turbo',
       percentualCdiBp: 11_500,
       reservaDeGastos: false,
+      convencaoRendimento: null,
       ativa: true,
     });
   });
@@ -78,6 +85,23 @@ describe('CaixinhasService — Caixinhas (CA-13)', () => {
 
     prisma.caixinha.findUnique.mockResolvedValue(null);
     await expect(service.atualizar('x', { nome: 'Y' })).rejects.toThrow(CaixinhaNaoEncontradaError);
+  });
+
+  it('atualizar aceita trocar a convenção de rendimento e voltar ao padrão com null', async () => {
+    const { prisma, service } = montar();
+    prisma.caixinha.update.mockResolvedValue(caixinhaBanco);
+
+    await service.atualizar('c1', { convencaoRendimento: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO' });
+    expect(prisma.caixinha.update).toHaveBeenLastCalledWith({
+      where: { id: 'c1' },
+      data: { convencaoRendimento: 'MOVIMENTO_DEPOIS_DO_RENDIMENTO' },
+    });
+
+    await service.atualizar('c1', { convencaoRendimento: null });
+    expect(prisma.caixinha.update).toHaveBeenLastCalledWith({
+      where: { id: 'c1' },
+      data: { convencaoRendimento: null },
+    });
   });
 
   it('remover: 404 se não existe', async () => {

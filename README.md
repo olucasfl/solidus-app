@@ -52,6 +52,7 @@ Tudo exige `Authorization: Bearer <accessToken>`, exceto `GET /health`, `POST /a
 | `DELETE /movimentos/:id`, `GET /movimentos/sugestoes?desde=`                                  | desfazer e sugerir vínculo com o sync           | 05   |
 | `GET /impostos`, `PUT /impostos/IR\|IOF`                                                      | tabelas de IR/IOF (editáveis)                   | 05   |
 | `GET /carteira?data=`, `POST /cdi/sincronizar` (header `x-sync-token`)                        | saldo estimado bruto/líquido; CDI do BCB        | 05   |
+| `GET /caixinhas/:id/conferencia`                                                              | o app se confere com os saldos que você deu     | 05   |
 
 Para rodar contra o Pluggy de verdade: suba a API (`pnpm dev`), faça login, e chame
 `POST /sync` com o `SYNC_CRON_TOKEN` do `.env`.

@@ -2,6 +2,7 @@ import type {
   Caixinha,
   Carteira,
   CdiSyncResponse,
+  ConferenciaCaixinha,
   ImpostosResponse,
   FaixaImposto,
   MovimentoCaixinha,
@@ -46,7 +47,10 @@ const TIPOS_IMPOSTO = { IR: 'IR', IOF: 'IOF' } as const;
 // Tudo autenticado pelo guard global (nenhum @Public()), exceto POST /cdi/sincronizar mais abaixo.
 @Controller('caixinhas')
 export class CaixinhasController {
-  constructor(private readonly caixinhas: CaixinhasService) {}
+  constructor(
+    private readonly caixinhas: CaixinhasService,
+    private readonly carteira: CarteiraService,
+  ) {}
 
   @Get()
   listar(): Promise<Caixinha[]> {
@@ -70,6 +74,11 @@ export class CaixinhasController {
   @HttpCode(HttpStatus.NO_CONTENT)
   remover(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.caixinhas.remover(id);
+  }
+
+  @Get(':id/conferencia')
+  conferir(@Param('id', ParseUUIDPipe) id: string): Promise<ConferenciaCaixinha> {
+    return this.carteira.conferir(id);
   }
 
   @Get(':id/movimentos')

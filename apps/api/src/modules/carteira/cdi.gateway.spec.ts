@@ -36,6 +36,23 @@ describe('BcbCdiGateway (CA-18 e CA-19)', () => {
     expect(url).toContain('dataFinal=31%2F01%2F2026');
   });
 
+  it('formato REAL da API do BCB (resposta capturada em 2026-10-05, série 12)', async () => {
+    // Corpo exatamente como o Banco Central devolveu: strings, data dd/MM/yyyy, valor em % ao dia.
+    fetchMock.mockResolvedValue(
+      resposta([
+        { data: '30/09/2026', valor: '0.050788' },
+        { data: '01/10/2026', valor: '0.050788' },
+        { data: '02/10/2026', valor: '0.050788' },
+      ]),
+    );
+
+    await expect(gateway.buscar('2026-09-30', '2026-10-02')).resolves.toEqual([
+      { data: '2026-09-30', taxaE8: 50_788 },
+      { data: '2026-10-01', taxaE8: 50_788 },
+      { data: '2026-10-02', taxaE8: 50_788 },
+    ]);
+  });
+
   it('resposta vazia é válida (nenhum dia útil no intervalo)', async () => {
     fetchMock.mockResolvedValue(resposta([]));
 

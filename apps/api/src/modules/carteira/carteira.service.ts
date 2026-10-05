@@ -1,11 +1,19 @@
-import type { AvisoCarteira, Carteira, CaixinhaNaCarteira } from '@solidus/shared';
+import type {
+  AvisoCarteira,
+  CaixinhaNaCarteira,
+  Carteira,
+  ConferenciaCaixinha,
+} from '@solidus/shared';
 import { Injectable } from '@nestjs/common';
 import { hojeUtc } from '../../common/relogio';
 import { PrismaService } from '../../database/prisma.service';
 import { type DataIso, dataIsoDe, diasEntre, ehDataIso } from '../../domain/carteira/datas';
 import { type Movimento, projetarCaixinha } from '../../domain/carteira/projetar';
 import { totaisDaCarteira } from '../../domain/carteira/totais';
-import { dadoInvalido } from './carteira-errors';
+import { conferirCaixinha } from '../../domain/carteira/conferir';
+import { CONVENCAO_PADRAO } from '../../domain/carteira/projetar';
+import { CaixinhaNaoEncontradaError, dadoInvalido } from './carteira-errors';
+import { CdiService } from './cdi.service';
 import { ImpostosService } from './impostos.service';
 
 @Injectable()
@@ -13,9 +21,14 @@ export class CarteiraService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly impostos: ImpostosService,
+    private readonly cdiService: CdiService,
   ) {}
 
-  /** Carteira em `data` (padrão: hoje, UTC). Só leitura: nunca chama o BCB, usa o CDI já gravado. */
+  /**
+   * Carteira em `data` (padrão: hoje, UTC). Antes de calcular, deixa o CDI em dia por conta própria
+   * (best effort, com tempo máximo de espera): se o BCB falhar, responde com o que já tem e o aviso
+   * `CDI_DEFASADO`. Só leitura para o usuário.
+   */
   async consultar(data?: string): Promise<Carteira> {
     const ate = data ?? hojeUtc();
     if (!ehDataIso(ate)) {
@@ -24,6 +37,8 @@ export class CarteiraService {
     if (diasEntre(hojeUtc(), ate) > 0) {
       throw dadoInvalido('DATA_FUTURA', 'data não pode estar no futuro.');
     }
+
+    await this.cdiService.atualizarSeNecessario();
 
     const [caixinhas, cdiDias, iof, ir] = await Promise.all([
       this.prisma.caixinha.findMany({
@@ -50,6 +65,7 @@ export class CarteiraService {
         ate,
         iof,
         ir,
+        convencao: c.convencaoRendimento ?? CONVENCAO_PADRAO,
       });
       return {
         id: c.id,
@@ -83,6 +99,39 @@ export class CarteiraService {
         })),
       ),
       avisos: [...avisos],
+    };
+  }
+
+  /**
+   * O app se confere com os saldos que o usuário JÁ informou: para cada par de saldos consecutivos,
+   * compara o que estimaria com o que ele informou, nas duas convenções, e sugere a que erra menos.
+   */
+  async conferir(caixinhaId: string): Promise<ConferenciaCaixinha> {
+    const caixinha = await this.prisma.caixinha.findUnique({
+      where: { id: caixinhaId },
+      include: { movimentos: { orderBy: [{ data: 'asc' }, { criadoEm: 'asc' }] } },
+    });
+    if (!caixinha) {
+      throw new CaixinhaNaoEncontradaError();
+    }
+    await this.cdiService.atualizarSeNecessario();
+    const cdiDias = await this.prisma.cdiDia.findMany();
+
+    const conferencia = conferirCaixinha({
+      movimentos: caixinha.movimentos.map((m) => ({
+        tipo: m.tipo,
+        data: dataIsoDe(m.data),
+        valorCentavos: m.valorCentavos,
+        dataOrigem: m.dataOrigem ? dataIsoDe(m.dataOrigem) : null,
+      })),
+      percentualCdiBp: caixinha.percentualCdiBp,
+      cdi: new Map<DataIso, number>(cdiDias.map((d) => [dataIsoDe(d.data), d.taxaE8])),
+    });
+
+    return {
+      caixinhaId,
+      convencaoEmUso: caixinha.convencaoRendimento ?? CONVENCAO_PADRAO,
+      ...conferencia,
     };
   }
 }

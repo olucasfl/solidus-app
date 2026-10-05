@@ -28,30 +28,31 @@ nunca regex (usuário cria regras; regex abriria ReDoS).
 
 ## Taxonomia (lista fechada, em `packages/shared`)
 
-| id                        | nome                      | natureza   |
-| ------------------------- | ------------------------- | ---------- |
-| `MORADIA`                 | Moradia                   | DESPESA    |
-| `MERCADO`                 | Mercado                   | DESPESA    |
-| `RESTAURANTES_DELIVERY`   | Restaurantes e delivery   | DESPESA    |
-| `TRANSPORTE`              | Transporte                | DESPESA    |
-| `SAUDE`                   | Saúde                     | DESPESA    |
-| `LAZER`                   | Lazer                     | DESPESA    |
-| `EDUCACAO`                | Educação e livros         | DESPESA    |
-| `ASSINATURAS_COMUNICACAO` | Assinaturas e comunicação | DESPESA    |
-| `COMPRAS`                 | Compras                   | DESPESA    |
-| `VIAGENS`                 | Viagens                   | DESPESA    |
-| `DOACOES`                 | Doações                   | DESPESA    |
-| `IMPOSTOS_TARIFAS`        | Impostos e tarifas        | DESPESA    |
-| `SERVICOS`                | Serviços                  | DESPESA    |
-| `TRANSFERENCIAS_ENVIADAS` | Transferências enviadas   | DESPESA    |
-| `OUTRAS_DESPESAS`         | Outras despesas           | DESPESA    |
-| `SALARIO`                 | Salário                   | RECEITA    |
-| `RENDIMENTOS_CASHBACK`    | Rendimentos e cashback    | RECEITA    |
-| `OUTRAS_RECEITAS`         | Outras receitas           | RECEITA    |
-| `INVESTIMENTO`            | Aplicações e resgates     | NEUTRA     |
-| `PAGAMENTO_FATURA`        | Pagamento de fatura       | NEUTRA     |
-| `TRANSFERENCIA_INTERNA`   | Entre contas próprias     | NEUTRA     |
-| `A_CLASSIFICAR`           | A classificar             | INDEFINIDA |
+| id                         | nome                      | natureza   |
+| -------------------------- | ------------------------- | ---------- |
+| `MORADIA`                  | Moradia                   | DESPESA    |
+| `MERCADO`                  | Mercado                   | DESPESA    |
+| `RESTAURANTES_DELIVERY`    | Restaurantes e delivery   | DESPESA    |
+| `TRANSPORTE`               | Transporte                | DESPESA    |
+| `SAUDE`                    | Saúde                     | DESPESA    |
+| `LAZER`                    | Lazer                     | DESPESA    |
+| `EDUCACAO`                 | Educação e livros         | DESPESA    |
+| `ASSINATURAS_COMUNICACAO`  | Assinaturas e comunicação | DESPESA    |
+| `COMPRAS`                  | Compras                   | DESPESA    |
+| `VIAGENS`                  | Viagens                   | DESPESA    |
+| `DOACOES`                  | Doações                   | DESPESA    |
+| `IMPOSTOS_TARIFAS`         | Impostos e tarifas        | DESPESA    |
+| `SERVICOS`                 | Serviços                  | DESPESA    |
+| `OUTRAS_DESPESAS`          | Outras despesas           | DESPESA    |
+| `SALARIO`                  | Salário                   | RECEITA    |
+| `RENDIMENTOS_CASHBACK`     | Rendimentos e cashback    | RECEITA    |
+| `OUTRAS_RECEITAS`          | Outras receitas           | RECEITA    |
+| `INVESTIMENTO`             | Aplicações e resgates     | NEUTRA     |
+| `PAGAMENTO_FATURA`         | Pagamento de fatura       | NEUTRA     |
+| `TRANSFERENCIA_INTERNA`    | Entre contas próprias     | NEUTRA     |
+| `PIX_RECEBIDO_DE_PESSOAS`  | Pix recebido de pessoas   | NEUTRA     |
+| `PIX_ENVIADO_PARA_PESSOAS` | Pix enviado para pessoas  | NEUTRA     |
+| `A_CLASSIFICAR`            | A classificar             | INDEFINIDA |
 
 `SALARIO`, `OUTRAS_RECEITAS` e `MORADIA` não saem de nenhuma regra padrão (o Pluggy não as
 distingue): só por regra do usuário ou categoria manual.
@@ -74,8 +75,12 @@ distingue): só por regra do usuário ou categoria manual.
      `ASSINATURAS_COMUNICACAO`; `Shopping`, `Online shopping`, `Clothing`, `Electronics`,
      `Sports goods`, `Kids and toys`→`COMPRAS`; `Travel`→`VIAGENS`; `Donations`→`DOACOES`;
      `Tax on financial operations`→`IMPOSTOS_TARIFAS`; `Services`→`SERVICOS`; `Cashback`
-     (crédito)→`RENDIMENTOS_CASHBACK`; `Transfers` débito→`TRANSFERENCIAS_ENVIADAS`;
-     `Transfers`/`Third party transfers` crédito→`A_CLASSIFICAR`.
+     (crédito)→`RENDIMENTOS_CASHBACK`; `Transfers`/`Third party transfers` →
+     `PIX_RECEBIDO_DE_PESSOAS` (crédito) ou `PIX_ENVIADO_PARA_PESSOAS` (débito). **Pix de e para
+     pessoas é neutro por padrão** (não é renda nem despesa: pode ser aluguel, cliente, reembolso,
+     rachar conta...) mas **nunca é escondido**: a taxa de poupança reporta o total à parte. Para
+     contar um Pix específico, o usuário cria uma regra (ex.: o dono do aluguel → `MORADIA`; um
+     cliente → `OUTRAS_RECEITAS`), que vence a regra padrão.
 - **Persistência:** `Transacao.categoria` + `Transacao.origemCategoria` (`REGRA_USUARIO`,
   `REGRA_PADRAO`, `MANUAL`). Transação sem categoria (`null`) é categorizada ao fim de cada sync
   (falha na categorização é logada e **não** derruba o sync). `POST /categorizacao/recalcular`
@@ -153,8 +158,10 @@ dinheiro; só lê `valorCentavos` (inteiro) para os filtros de listagem.
       Pluggy `Investments`, **então** ambos → `INVESTIMENTO`.
 - [x] **CA-03** — **Dado** Pluggy `Same person transfer`, **então** a saída é `TRANSFERENCIA_INTERNA` e
       a entrada é `A_CLASSIFICAR` (revisado em 2026-10-05: o salário do Lucas chega por conta própria).
-- [x] **CA-04** — **Dado** crédito com Pluggy `Transfers`, **então** `A_CLASSIFICAR` (INDEFINIDA);
-      **dado** débito com Pluggy `Transfers`, **então** `TRANSFERENCIAS_ENVIADAS` (DESPESA).
+- [x] **CA-04** — **Dado** crédito com Pluggy `Transfers` ou `Third party transfers`, **então**
+      `PIX_RECEBIDO_DE_PESSOAS`; **dado** débito com Pluggy `Transfers`, **então**
+      `PIX_ENVIADO_PARA_PESSOAS` (ambas NEUTRA; revisado em 2026-10-05 a pedido do humano: "Pix de
+      pessoas, classifica como Pix de pessoas"). Uma regra do usuário reclassifica um Pix específico.
 - [x] **CA-05** — **Dado** cada categoria Pluggy do mapa (uma por linha da regra 4), **então**
       devolve a categoria do Solidus listada; **dado** uma categoria Pluggy desconhecida, débito →
       `OUTRAS_DESPESAS`, crédito → `A_CLASSIFICAR`.
@@ -230,9 +237,10 @@ Nenhuma bloqueante.
 
 - `Gambling` → `LAZER` (poderia ter categoria própria; fica para o usuário decidir por regra).
 - `Services` → `SERVICOS` (despesa genérica) por não haver como saber mais.
-- Débito `Transfers` conta como despesa (`TRANSFERENCIAS_ENVIADAS`): Pix para terceiros sai do bolso;
-  se for entre contas próprias, o usuário cria regra → `TRANSFERENCIA_INTERNA`.
-- Crédito `Transfers` fica `A_CLASSIFICAR`: salário e reembolso não são distinguíveis sem regra.
+- Pix de e para pessoas é neutro e reportado à parte (decisão do humano em 2026-10-05); o app é
+  global, então não presume que Pix recebido é renda nem que Pix enviado é gasto. Quem quiser contá-lo
+  cria regra. (Antes: saída = despesa, entrada = a classificar; a categoria
+  `TRANSFERENCIAS_ENVIADAS` foi removida da taxonomia e o `naturezaDe` trata id antigo como indefinido.)
 - Estorno (`Shopping` crédito) cai em `COMPRAS` com valor positivo, reduzindo a despesa da categoria.
 - Descrição casa por substring simples; "aplicação"/"resgate" em descrição de outra natureza
   (ex.: "Aplicação de verniz" numa compra) seria mal classificada — risco baixo, corrigível por manual.

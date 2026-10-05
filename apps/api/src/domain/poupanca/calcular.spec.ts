@@ -74,6 +74,37 @@ describe('calcularPoupanca', () => {
     });
   });
 
+  it('CA-04b: Pix de e para pessoas ficam fora da conta, mas são reportados e geram aviso', () => {
+    const r = calcularPoupanca('2026-09', [
+      g('SALARIO', 100_000),
+      g('MERCADO', -30_000),
+      g('PIX_RECEBIDO_DE_PESSOAS', 80_000, 3, 'CREDITO'),
+      g('PIX_ENVIADO_PARA_PESSOAS', -45_000, 4, 'DEBITO'),
+    ]);
+
+    expect(r.receitasCentavos).toBe(100_000);
+    expect(r.despesasCentavos).toBe(30_000);
+    expect(r.pixPessoas).toEqual({
+      quantidade: 7,
+      entradasCentavos: 80_000,
+      saidasCentavos: 45_000,
+    });
+    expect(r.avisos).toContain('PIX_ENTRE_PESSOAS_FORA_DA_CONTA');
+    expect(r.avisos).not.toContain('ENTRADAS_A_CLASSIFICAR');
+    expect(r.neutras.quantidade).toBe(7);
+  });
+
+  it('CA-04b: sem Pix entre pessoas não há aviso; categoria antiga desconhecida é indefinida', () => {
+    const r = calcularPoupanca('2026-09', [
+      g('SALARIO', 100_000),
+      g('TRANSFERENCIAS_ENVIADAS' as never, -9_000, 2, 'DEBITO'),
+    ]);
+
+    expect(r.pixPessoas.quantidade).toBe(0);
+    expect(r.avisos).not.toContain('PIX_ENTRE_PESSOAS_FORA_DA_CONTA');
+    expect(r.indefinidas).toMatchObject({ quantidade: 2, saidasCentavos: 9_000 });
+  });
+
   it('CA-05: sem receita não divide por zero', () => {
     const r = calcularPoupanca('2026-09', [g('MERCADO', -10_000)]);
 
@@ -105,6 +136,7 @@ describe('calcularPoupanca', () => {
       transacoes: 0,
       neutras: { quantidade: 0 },
       indefinidas: { quantidade: 0, entradasCentavos: 0, saidasCentavos: 0 },
+      pixPessoas: { quantidade: 0, entradasCentavos: 0, saidasCentavos: 0 },
       porCategoria: [],
       avisos: ['SEM_TRANSACOES', 'SEM_RECEITA'],
     });

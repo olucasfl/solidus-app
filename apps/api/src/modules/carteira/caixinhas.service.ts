@@ -39,6 +39,7 @@ export class CaixinhasService {
         nome: dto.nome,
         percentualCdiBp: dto.percentualCdiBp,
         reservaDeGastos: dto.reservaDeGastos ?? false,
+        convencaoRendimento: dto.convencaoRendimento ?? null,
       },
     });
     return this.paraCaixinha(criada);
@@ -52,6 +53,9 @@ export class CaixinhasService {
         ...(dto.nome !== undefined && { nome: dto.nome }),
         ...(dto.percentualCdiBp !== undefined && { percentualCdiBp: dto.percentualCdiBp }),
         ...(dto.reservaDeGastos !== undefined && { reservaDeGastos: dto.reservaDeGastos }),
+        ...(dto.convencaoRendimento !== undefined && {
+          convencaoRendimento: dto.convencaoRendimento,
+        }),
         ...(dto.ativa !== undefined && { ativa: dto.ativa }),
       },
     });
@@ -193,6 +197,7 @@ export class CaixinhasService {
       nome: c.nome,
       percentualCdiBp: c.percentualCdiBp,
       reservaDeGastos: c.reservaDeGastos,
+      convencaoRendimento: c.convencaoRendimento,
       ativa: c.ativa,
     };
   }

@@ -59,12 +59,13 @@ anterior:
       são ~R$ 2 a 8 mil por mês, mais que o salário. O sistema não sabe se é renda, reembolso ou dinheiro
       seu movimentado, então a taxa de poupança continua negativa/duvidosa até você decidir.
       `GET /transacoes?categoria=A_CLASSIFICAR`, depois `POST /regras` ou `PATCH /transacoes/:id/categoria`.
-- [ ] **Spec `05-carteira-caixinhas` implementada; faltam 3 coisas suas** (nada disso o agente consegue
-      provar sozinho): 1. Criar suas Caixinhas (`POST /caixinhas`: Turbo 11500, as outras 10000, Gastos 0 com
-      `reservaDeGastos: true`) e informar o saldo de hoje de cada uma (`POST /caixinhas/:id/movimentos`). 2. Rodar `POST /cdi/sincronizar` (header `x-sync-token`) de uma rede com acesso ao Banco Central — o
-      ambiente do agente não alcança a API, então o formato real da resposta nunca foi visto. 3. Alguns dias depois, comparar `GET /carteira` com o app do Nubank: se divergir de centavos, é a
-      convenção do dia de rendimento ou o truncamento (spec 05, "Para o humano verificar"). Conferir
-      também `GET /impostos` (IR/IOF foram semeados com a tabela legal que o agente conhece).
+- [ ] **Multiusuário (decisão do humano em 2026-10-05: o app é para outras pessoas também) — AGUARDA
+      UM "SIM" SEU**: reabrir o cadastro público contraria `RULES.md` §3 e `docs/produto.md`. O rascunho
+      `06-multiusuario.md` tem o desenho completo e o diff exato dessas regras; nada foi alterado ainda.
+- [ ] **Para o front-end (quando existir):** criar as Caixinhas e informar os saldos; classificar os Pix de
+      pessoas que contam como renda/despesa (regras). O CDI se atualiza sozinho e o app se confere com os
+      saldos informados (`GET /caixinhas/:id/conferencia`); alíquotas de IR/IOF foram verificadas em
+      2026-10-05 (spec 05).
 - [ ] No deploy, **medir o `TRUST_PROXY_HOPS`** (ARCHITECTURE.md §7) — sem isso o limite de tentativas é global.
 - [ ] Agendar o `POST /sync` (Render Cron Job ou GitHub Actions, ADR 0005) — só quando houver deploy.
 

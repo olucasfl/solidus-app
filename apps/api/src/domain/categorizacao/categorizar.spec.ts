@@ -59,14 +59,31 @@ describe('regras padrão por descrição e por tipo de movimento', () => {
     expect(cat({ tipo: 'CREDITO', categoriaPluggy: 'Same person transfer' })).toBe('A_CLASSIFICAR');
   });
 
-  it('CA-04: Transfers de entrada é A_CLASSIFICAR; de saída é despesa', () => {
-    expect(cat({ tipo: 'CREDITO', categoriaPluggy: 'Transfers' })).toBe('A_CLASSIFICAR');
+  it('CA-04: Pix/transferência de e para pessoas tem categoria própria (neutra por padrão)', () => {
+    expect(cat({ tipo: 'CREDITO', categoriaPluggy: 'Transfers' })).toBe('PIX_RECEBIDO_DE_PESSOAS');
     expect(cat({ tipo: 'CREDITO', categoriaPluggy: 'Third party transfers' })).toBe(
-      'A_CLASSIFICAR',
+      'PIX_RECEBIDO_DE_PESSOAS',
     );
-    expect(cat({ tipo: 'DEBITO', categoriaPluggy: 'Transfers' })).toBe('TRANSFERENCIAS_ENVIADAS');
-    expect(naturezaDe('A_CLASSIFICAR')).toBe('INDEFINIDA');
-    expect(naturezaDe('TRANSFERENCIAS_ENVIADAS')).toBe('DESPESA');
+    expect(cat({ tipo: 'DEBITO', categoriaPluggy: 'Transfers' })).toBe('PIX_ENVIADO_PARA_PESSOAS');
+    expect(naturezaDe('PIX_RECEBIDO_DE_PESSOAS')).toBe('NEUTRA');
+    expect(naturezaDe('PIX_ENVIADO_PARA_PESSOAS')).toBe('NEUTRA');
+  });
+
+  it('CA-04b: o usuário reclassifica um Pix específico por regra (ex.: aluguel é despesa, cliente é renda)', () => {
+    const pix = (tipo: 'DEBITO' | 'CREDITO', descricao: string) =>
+      entrada({ tipo, descricao, categoriaPluggy: 'Transfers' });
+    const regras = [
+      regra({ padrao: 'proprietario joao', categoria: 'MORADIA', tipo: 'DEBITO' }),
+      regra({ padrao: 'cliente acme', categoria: 'OUTRAS_RECEITAS', tipo: 'CREDITO' }),
+    ];
+
+    expect(categorizar(pix('DEBITO', 'Pix|PROPRIETARIO JOAO'), regras).categoria).toBe('MORADIA');
+    expect(categorizar(pix('CREDITO', 'Pix|CLIENTE ACME'), regras).categoria).toBe(
+      'OUTRAS_RECEITAS',
+    );
+    expect(categorizar(pix('DEBITO', 'Pix|AMIGA'), regras).categoria).toBe(
+      'PIX_ENVIADO_PARA_PESSOAS',
+    );
   });
 
   it.each([
@@ -196,11 +213,18 @@ describe('regra com faixa de valor (salário ≈ R$ 1.044 vs. transferências pr
   });
 });
 
+describe('taxonomia — robustez', () => {
+  it('categoria desconhecida (antiga) é INDEFINIDA, nunca um erro', () => {
+    expect(naturezaDe('TRANSFERENCIAS_ENVIADAS')).toBe('INDEFINIDA');
+    expect(naturezaDe('QUALQUER_COISA')).toBe('INDEFINIDA');
+  });
+});
+
 describe('taxonomia', () => {
   it('CA-18: ids únicos, toda categoria tem natureza válida e o conjunto bate com a spec', () => {
     const ids = CATEGORIAS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toHaveLength(22);
+    expect(ids).toHaveLength(23);
     for (const c of CATEGORIAS) {
       expect(['RECEITA', 'DESPESA', 'NEUTRA', 'INDEFINIDA']).toContain(naturezaDe(c.id));
     }
@@ -208,7 +232,13 @@ describe('taxonomia', () => {
       CATEGORIAS.filter((c) => c.natureza === 'NEUTRA')
         .map((c) => c.id)
         .sort(),
-    ).toEqual(['INVESTIMENTO', 'PAGAMENTO_FATURA', 'TRANSFERENCIA_INTERNA']);
+    ).toEqual([
+      'INVESTIMENTO',
+      'PAGAMENTO_FATURA',
+      'PIX_ENVIADO_PARA_PESSOAS',
+      'PIX_RECEBIDO_DE_PESSOAS',
+      'TRANSFERENCIA_INTERNA',
+    ]);
     expect(
       CATEGORIAS.filter((c) => c.natureza === 'RECEITA')
         .map((c) => c.id)
