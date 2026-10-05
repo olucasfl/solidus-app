@@ -10,7 +10,7 @@ commit — `/docs-sync` confere se ela bate com a realidade.
 | Sync com o Pluggy        | [02-sync-pluggy.md](02-sync-pluggy.md)               | ✅ implementada |
 | Categorização por regras | [03-categorizacao.md](03-categorizacao.md)           | ✅ implementada |
 | Taxa de poupança         | [04-taxa-de-poupanca.md](04-taxa-de-poupanca.md)     | ✅ implementada |
-| Carteira por Caixinha    | [05-carteira-caixinhas.md](05-carteira-caixinhas.md) | 📝 rascunho     |
+| Carteira por Caixinha    | [05-carteira-caixinhas.md](05-carteira-caixinhas.md) | 🚧 em andamento |
 
 ## Legenda de status
 
