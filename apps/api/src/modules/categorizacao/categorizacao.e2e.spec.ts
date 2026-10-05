@@ -24,6 +24,8 @@ describe('categorização e transações (e2e)', () => {
   const prisma = {
     regraCategoria: {
       findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn(),
+      update: jest.fn(),
       create: jest.fn(),
       deleteMany: jest.fn(),
     },
@@ -89,6 +91,7 @@ describe('categorização e transações (e2e)', () => {
       () => http().get('/categorias'),
       () => http().get('/regras'),
       () => http().post('/regras').send({ padrao: 'x', categoria: 'MERCADO' }),
+      () => http().patch(`/regras/${UUID}`).send({ prioridade: 1 }),
       () => http().delete(`/regras/${UUID}`),
       () => http().patch(`/transacoes/${UUID}/categoria`).send({ categoria: 'LAZER' }),
       () => http().post('/categorizacao/recalcular'),
@@ -115,6 +118,8 @@ describe('categorização e transações (e2e)', () => {
       ['categoria inexistente', { padrao: 'x', categoria: 'XYZ' }],
       ['tipo inválido', { padrao: 'x', categoria: 'MERCADO', tipo: 'OUTRO' }],
       ['prioridade 1001', { padrao: 'x', categoria: 'MERCADO', prioridade: 1001 }],
+      ['faixa negativa', { padrao: 'x', categoria: 'MERCADO', valorMinCentavos: -1 }],
+      ['faixa não inteira', { padrao: 'x', categoria: 'MERCADO', valorMaxCentavos: 10.5 }],
       ['campo extra', { padrao: 'x', categoria: 'MERCADO', admin: true }],
     ])('CA-10: %s → 400 e nada é gravado', async (_nome, corpo) => {
       const r = await http().post('/regras').set('Authorization', auth).send(corpo);
@@ -139,8 +144,74 @@ describe('categorização e transações (e2e)', () => {
 
       expect(r.status).toBe(201);
       expect(prisma.regraCategoria.create).toHaveBeenCalledWith({
-        data: { padrao: 'padaria', categoria: 'MERCADO', tipo: 'DEBITO', prioridade: 3 },
+        data: {
+          padrao: 'padaria',
+          categoria: 'MERCADO',
+          tipo: 'DEBITO',
+          valorMinCentavos: null,
+          valorMaxCentavos: null,
+          prioridade: 3,
+        },
       });
+    });
+  });
+
+  describe('PATCH /regras/:id', () => {
+    it.each([
+      ['tipo inválido', { tipo: 'OUTRO' }],
+      ['categoria inexistente', { categoria: 'XYZ' }],
+      ['prioridade 2000', { prioridade: 2000 }],
+      ['limite não inteiro', { valorMaxCentavos: 1.5 }],
+      ['padrão vazio', { padrao: '' }],
+      ['campo extra', { admin: true }],
+    ])('CA-24: %s → 400 sem tocar o banco', async (_nome, corpo) => {
+      prisma.regraCategoria.update.mockClear();
+
+      const r = await http().patch(`/regras/${UUID}`).set('Authorization', auth).send(corpo);
+
+      expect(r.status).toBe(400);
+      expect(prisma.regraCategoria.update).not.toHaveBeenCalled();
+    });
+
+    it('CA-24: id não-UUID dá 400; inexistente 404; válida 200 e aceita null para limpar a faixa', async () => {
+      expect(
+        (
+          await http()
+            .patch('/regras/nao-e-uuid')
+            .set('Authorization', auth)
+            .send({ prioridade: 1 })
+        ).status,
+      ).toBe(400);
+
+      prisma.regraCategoria.findUnique.mockResolvedValueOnce(null);
+      const nao = await http()
+        .patch(`/regras/${UUID}`)
+        .set('Authorization', auth)
+        .send({ prioridade: 1 });
+      expect(nao.status).toBe(404);
+      expect(nao.body.code).toBe('REGRA_NAO_ENCONTRADA');
+
+      const existente = {
+        id: UUID,
+        padrao: 'x',
+        categoria: 'SALARIO',
+        tipo: 'CREDITO',
+        valorMinCentavos: 1,
+        valorMaxCentavos: 2,
+        prioridade: 0,
+      };
+      prisma.regraCategoria.findUnique.mockResolvedValueOnce(existente);
+      prisma.regraCategoria.update.mockResolvedValueOnce({
+        ...existente,
+        valorMinCentavos: null,
+        valorMaxCentavos: null,
+      });
+      const ok = await http()
+        .patch(`/regras/${UUID}`)
+        .set('Authorization', auth)
+        .send({ valorMinCentavos: null, valorMaxCentavos: null });
+      expect(ok.status).toBe(200);
+      expect(ok.body).toMatchObject({ valorMinCentavos: null, valorMaxCentavos: null });
     });
   });
 

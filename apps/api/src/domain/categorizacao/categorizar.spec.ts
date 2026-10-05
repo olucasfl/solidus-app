@@ -3,7 +3,7 @@ import { categorizar, type EntradaCategorizacao, type RegraUsuario } from './cat
 import { normalizar } from './normalizar';
 
 function entrada(p: Partial<EntradaCategorizacao>): EntradaCategorizacao {
-  return { descricao: 'Algo', tipo: 'DEBITO', categoriaPluggy: null, ...p };
+  return { descricao: 'Algo', tipo: 'DEBITO', categoriaPluggy: null, valorCentavos: -1000, ...p };
 }
 
 function regra(p: Partial<RegraUsuario>): RegraUsuario {
@@ -11,6 +11,8 @@ function regra(p: Partial<RegraUsuario>): RegraUsuario {
     padrao: 'padaria',
     categoria: 'MERCADO',
     tipo: null,
+    valorMinCentavos: null,
+    valorMaxCentavos: null,
     prioridade: 0,
     criadoEm: new Date('2026-01-01T00:00:00Z'),
     ...p,
@@ -50,13 +52,11 @@ describe('regras padrão por descrição e por tipo de movimento', () => {
     expect(cat({ descricao: 'Aplicação X', categoriaPluggy: 'Fixed income' })).toBe('INVESTIMENTO');
   });
 
-  it('CA-03: transferência para si mesmo é TRANSFERENCIA_INTERNA nos dois sentidos', () => {
+  it('CA-03: saída para conta própria é neutra; ENTRADA de conta própria é A_CLASSIFICAR (o sistema não presume que não é salário)', () => {
     expect(cat({ tipo: 'DEBITO', categoriaPluggy: 'Same person transfer' })).toBe(
       'TRANSFERENCIA_INTERNA',
     );
-    expect(cat({ tipo: 'CREDITO', categoriaPluggy: 'Same person transfer' })).toBe(
-      'TRANSFERENCIA_INTERNA',
-    );
+    expect(cat({ tipo: 'CREDITO', categoriaPluggy: 'Same person transfer' })).toBe('A_CLASSIFICAR');
   });
 
   it('CA-04: Transfers de entrada é A_CLASSIFICAR; de saída é despesa', () => {
@@ -150,6 +150,49 @@ describe('regras do usuário', () => {
 
   it('padrão vazio nunca casa (não pega tudo)', () => {
     expect(categorizar(compra, [regra({ padrao: '   ' })]).origem).toBe('REGRA_PADRAO');
+  });
+});
+
+describe('regra com faixa de valor (salário ≈ R$ 1.044 vs. transferências próprias pequenas)', () => {
+  const salario = regra({
+    padrao: 'lucas farias leandro',
+    categoria: 'SALARIO',
+    tipo: 'CREDITO',
+    valorMinCentavos: 80_000,
+    valorMaxCentavos: 150_000,
+  });
+  const propria = (valorCentavos: number) =>
+    entrada({
+      descricao: 'Transferência Recebida|LUCAS FARIAS LEANDRO',
+      tipo: 'CREDITO',
+      categoriaPluggy: 'Same person transfer',
+      valorCentavos,
+    });
+
+  it('CA-21: dentro da faixa (inclusive nas bordas) a regra do usuário vence a padrão', () => {
+    for (const valor of [104_442, 97_585, 80_000, 150_000]) {
+      expect(categorizar(propria(valor), [salario])).toEqual({
+        categoria: 'SALARIO',
+        origem: 'REGRA_USUARIO',
+      });
+    }
+  });
+
+  it('CA-22: fora da faixa a regra não casa e cai na padrão (entrada própria a classificar, nunca salário por palpite)', () => {
+    for (const valor of [1_000, 5_000, 12_038, 79_999, 150_001]) {
+      expect(categorizar(propria(valor), [salario])).toEqual({
+        categoria: 'A_CLASSIFICAR',
+        origem: 'REGRA_PADRAO',
+      });
+    }
+  });
+
+  it('a faixa compara o módulo do valor (vale também para saídas) e aceita só um dos limites', () => {
+    const aluguel = regra({ padrao: 'aluguel', categoria: 'MORADIA', valorMinCentavos: 50_000 });
+    const saida = (valorCentavos: number) => entrada({ descricao: 'Pix aluguel', valorCentavos });
+
+    expect(categorizar(saida(-90_000), [aluguel]).categoria).toBe('MORADIA');
+    expect(categorizar(saida(-10_000), [aluguel]).categoria).not.toBe('MORADIA');
   });
 });
 

@@ -1,8 +1,9 @@
 import type { CategoriaId, RecalcularResponse, RegraCategoria } from '@solidus/shared';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { OrigemCategoria, type Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { categorizar, type RegraUsuario } from '../../domain/categorizacao/categorizar';
+import { AtualizarRegraDto } from './dto/atualizar-regra.dto';
 import { CriarRegraDto } from './dto/criar-regra.dto';
 
 interface LinhaParaCategorizar {
@@ -10,6 +11,7 @@ interface LinhaParaCategorizar {
   descricao: string;
   tipo: 'DEBITO' | 'CREDITO';
   categoriaPluggy: string | null;
+  valorCentavos: number;
   categoria: string | null;
   origemCategoria: OrigemCategoria | null;
 }
@@ -19,6 +21,7 @@ const SELECT_LINHA = {
   descricao: true,
   tipo: true,
   categoriaPluggy: true,
+  valorCentavos: true,
   categoria: true,
   origemCategoria: true,
 } as const;
@@ -35,12 +38,47 @@ export class CategorizacaoService {
   }
 
   async criarRegra(dto: CriarRegraDto): Promise<RegraCategoria> {
+    if (
+      dto.valorMinCentavos !== undefined &&
+      dto.valorMaxCentavos !== undefined &&
+      dto.valorMinCentavos > dto.valorMaxCentavos
+    ) {
+      throw this.faixaInvalida();
+    }
     const regra = await this.prisma.regraCategoria.create({
       data: {
         padrao: dto.padrao,
         categoria: dto.categoria,
         tipo: dto.tipo ?? null,
+        valorMinCentavos: dto.valorMinCentavos ?? null,
+        valorMaxCentavos: dto.valorMaxCentavos ?? null,
         prioridade: dto.prioridade ?? 0,
+      },
+    });
+    return this.paraRegra(regra);
+  }
+
+  /** Edição parcial: `undefined` mantém, `null` remove a restrição (tipo ou limite da faixa). */
+  async atualizarRegra(id: string, dto: AtualizarRegraDto): Promise<RegraCategoria> {
+    const atual = await this.prisma.regraCategoria.findUnique({ where: { id } });
+    if (!atual) {
+      throw this.regraNaoEncontrada();
+    }
+    const min = dto.valorMinCentavos === undefined ? atual.valorMinCentavos : dto.valorMinCentavos;
+    const max = dto.valorMaxCentavos === undefined ? atual.valorMaxCentavos : dto.valorMaxCentavos;
+    if (min !== null && max !== null && min > max) {
+      throw this.faixaInvalida();
+    }
+
+    const regra = await this.prisma.regraCategoria.update({
+      where: { id },
+      data: {
+        ...(dto.padrao !== undefined && { padrao: dto.padrao }),
+        ...(dto.categoria !== undefined && { categoria: dto.categoria }),
+        ...(dto.tipo !== undefined && { tipo: dto.tipo }),
+        ...(dto.prioridade !== undefined && { prioridade: dto.prioridade }),
+        valorMinCentavos: min,
+        valorMaxCentavos: max,
       },
     });
     return this.paraRegra(regra);
@@ -49,11 +87,7 @@ export class CategorizacaoService {
   async removerRegra(id: string): Promise<void> {
     const { count } = await this.prisma.regraCategoria.deleteMany({ where: { id } });
     if (count === 0) {
-      throw new NotFoundException({
-        statusCode: 404,
-        code: 'REGRA_NAO_ENCONTRADA',
-        message: 'Regra não encontrada.',
-      });
+      throw this.regraNaoEncontrada();
     }
   }
 
@@ -125,12 +159,30 @@ export class CategorizacaoService {
     return alteradas;
   }
 
+  private faixaInvalida(): BadRequestException {
+    return new BadRequestException({
+      statusCode: 400,
+      code: 'FAIXA_INVALIDA',
+      message: 'valorMinCentavos não pode ser maior que valorMaxCentavos.',
+    });
+  }
+
+  private regraNaoEncontrada(): NotFoundException {
+    return new NotFoundException({
+      statusCode: 404,
+      code: 'REGRA_NAO_ENCONTRADA',
+      message: 'Regra não encontrada.',
+    });
+  }
+
   private async carregarRegras(): Promise<RegraUsuario[]> {
     const regras = await this.prisma.regraCategoria.findMany();
     return regras.map((r) => ({
       padrao: r.padrao,
       categoria: r.categoria as CategoriaId,
       tipo: r.tipo,
+      valorMinCentavos: r.valorMinCentavos,
+      valorMaxCentavos: r.valorMaxCentavos,
       prioridade: r.prioridade,
       criadoEm: r.criadoEm,
     }));
@@ -142,6 +194,8 @@ export class CategorizacaoService {
       padrao: r.padrao,
       categoria: r.categoria as CategoriaId,
       tipo: r.tipo,
+      valorMinCentavos: r.valorMinCentavos,
+      valorMaxCentavos: r.valorMaxCentavos,
       prioridade: r.prioridade,
     };
   }

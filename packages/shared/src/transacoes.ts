@@ -9,6 +9,9 @@ export interface RegraCategoria {
   padrao: string;
   categoria: CategoriaId;
   tipo: TipoTransacao | null;
+  /** Faixa opcional sobre o módulo do valor, em centavos. */
+  valorMinCentavos: number | null;
+  valorMaxCentavos: number | null;
   prioridade: number;
 }
 
@@ -16,6 +19,18 @@ export interface CriarRegraRequest {
   padrao: string;
   categoria: CategoriaId;
   tipo?: TipoTransacao;
+  valorMinCentavos?: number;
+  valorMaxCentavos?: number;
+  prioridade?: number;
+}
+
+/** Edição parcial; `null` em `tipo`/limites remove a restrição. */
+export interface AtualizarRegraRequest {
+  padrao?: string;
+  categoria?: CategoriaId;
+  tipo?: TipoTransacao | null;
+  valorMinCentavos?: number | null;
+  valorMaxCentavos?: number | null;
   prioridade?: number;
 }
 

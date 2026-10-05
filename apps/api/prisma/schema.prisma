@@ -141,6 +141,9 @@ model RegraCategoria {
   padrao     String         @db.VarChar(120)
   categoria  String         @db.VarChar(40)
   tipo       TipoTransacao?
+  // faixa opcional sobre o MÓDULO do valor (ex.: salário ≈ R$ 1.044), em centavos
+  valorMinCentavos Int?
+  valorMaxCentavos Int?
   prioridade Int            @default(0)
   criadoEm   DateTime       @default(now())
 }

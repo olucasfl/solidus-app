@@ -63,7 +63,8 @@ distingue): só por regra do usuário ou categoria manual.
   (4) fallback: débito → `OUTRAS_DESPESAS`, crédito → `A_CLASSIFICAR`.
 - **Regras padrão, na ordem:**
   1. descrição contém `pagamento de fatura` ou `pagamento recebido` → `PAGAMENTO_FATURA`
-  2. categoria Pluggy `Same person transfer` → `TRANSFERENCIA_INTERNA`
+  2. categoria Pluggy `Same person transfer`: **saída** → `TRANSFERENCIA_INTERNA`; **entrada** →
+     `A_CLASSIFICAR` (o salário pode chegar por outra conta do próprio usuário — o sistema não presume)
   3. categoria Pluggy `Investments` ou `Fixed income`, ou descrição contém `aplicação`/`resgate`
      → `INVESTIMENTO`
   4. mapa da categoria Pluggy: `Groceries`→`MERCADO`; `Eating out`, `Food delivery`→
@@ -82,6 +83,12 @@ distingue): só por regra do usuário ou categoria manual.
   histórico (criar/apagar regra não recalcula sozinho).
 - **Manual:** `PATCH /transacoes/:id/categoria` com uma categoria válida fixa `MANUAL` (nunca mais
   mexido por regra); com `null` solta a transação e ela é reavaliada pelas regras na hora.
+- **Nada é fixo no código: o que define "isso é salário" é regra do usuário, editável.** Uma regra
+  pode ter também uma **faixa de valor** (`valorMinCentavos`/`valorMaxCentavos`, sobre o módulo do
+  valor, ambos opcionais) para separar, por exemplo, o salário (≈ R$ 1.044, vindo de conta própria)
+  de transferências próprias pequenas. Quando o salário mudar, `PATCH /regras/:id` ajusta a faixa (ou
+  `null` a remove) sem apagar/recriar nem mexer em código; entradas fora de qualquer regra continuam
+  visíveis como `A_CLASSIFICAR` e nos avisos, nunca somem como "neutras".
 - Texto de regra: 1–120 caracteres após `trim`; comparação normaliza acento, caixa e espaços
   repetidos. Regra pode restringir a `tipo` (`DEBITO`/`CREDITO`).
 - Tudo autenticado (nenhuma rota `@Public()`).
@@ -90,15 +97,16 @@ distingue): só por regra do usuário ou categoria manual.
 
 Todas exigem `Authorization: Bearer` (401 do guard global sem ele).
 
-| Rota                              | Corpo / query                                                                  | Sucesso                                                                                                                                                               | Erros                                                                                           |
-| --------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `GET /categorias`                 | —                                                                              | **200** `[{ id, nome, natureza }]` (a taxonomia)                                                                                                                      | —                                                                                               |
-| `GET /regras`                     | —                                                                              | **200** `[{ id, padrao, categoria, tipo, prioridade }]`                                                                                                               | —                                                                                               |
-| `POST /regras`                    | `{ padrao, categoria, tipo?, prioridade? }`                                    | **201** a regra criada                                                                                                                                                | 400 (padrão vazio/longo, categoria fora da taxonomia, tipo inválido, prioridade fora de 0–1000) |
-| `DELETE /regras/:id`              | —                                                                              | **204**                                                                                                                                                               | 400 (id não-UUID) · 404 `REGRA_NAO_ENCONTRADA`                                                  |
-| `PATCH /transacoes/:id/categoria` | `{ categoria: string \| null }`                                                | **200** `{ id, categoria, origemCategoria }`                                                                                                                          | 400 (categoria inválida / id não-UUID) · 404 `TRANSACAO_NAO_ENCONTRADA`                         |
-| `POST /categorizacao/recalcular`  | —                                                                              | **200** `{ analisadas, alteradas }`                                                                                                                                   | —                                                                                               |
-| `GET /transacoes`                 | `mes?` (`YYYY-MM`), `categoria?`, `pagina?` (≥1), `limite?` (1–200, padrão 50) | **200** `{ total, pagina, limite, itens: [{ id, contaId, data, descricao, valorCentavos, tipo, status, moeda, categoria, origemCategoria }] }` ordenado por data desc | 400 (mes malformado, categoria inválida, paginação inválida)                                    |
+| Rota                              | Corpo / query                                                                                                                                      | Sucesso                                                                                                                                                               | Erros                                                                                                     |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `GET /categorias`                 | —                                                                                                                                                  | **200** `[{ id, nome, natureza }]` (a taxonomia)                                                                                                                      | —                                                                                                         |
+| `GET /regras`                     | —                                                                                                                                                  | **200** `[{ id, padrao, categoria, tipo, prioridade }]`                                                                                                               | —                                                                                                         |
+| `POST /regras`                    | `{ padrao, categoria, tipo?, valorMinCentavos?, valorMaxCentavos?, prioridade? }`                                                                  | **201** a regra criada                                                                                                                                                | 400 (padrão vazio/longo, categoria fora da taxonomia, tipo inválido, prioridade fora de 0–1000)           |
+| `PATCH /regras/:id`               | qualquer subconjunto de `{ padrao, categoria, tipo, valorMinCentavos, valorMaxCentavos, prioridade }`; `null` em `tipo`/limites remove a restrição | **200** a regra atualizada                                                                                                                                            | 400 (campo inválido ou extra, faixa invertida `FAIXA_INVALIDA`, id não-UUID) · 404 `REGRA_NAO_ENCONTRADA` |
+| `DELETE /regras/:id`              | —                                                                                                                                                  | **204**                                                                                                                                                               | 400 (id não-UUID) · 404 `REGRA_NAO_ENCONTRADA`                                                            |
+| `PATCH /transacoes/:id/categoria` | `{ categoria: string \| null }`                                                                                                                    | **200** `{ id, categoria, origemCategoria }`                                                                                                                          | 400 (categoria inválida / id não-UUID) · 404 `TRANSACAO_NAO_ENCONTRADA`                                   |
+| `POST /categorizacao/recalcular`  | —                                                                                                                                                  | **200** `{ analisadas, alteradas }`                                                                                                                                   | —                                                                                                         |
+| `GET /transacoes`                 | `mes?` (`YYYY-MM`), `categoria?`, `pagina?` (≥1), `limite?` (1–200, padrão 50)                                                                     | **200** `{ total, pagina, limite, itens: [{ id, contaId, data, descricao, valorCentavos, tipo, status, moeda, categoria, origemCategoria }] }` ordenado por data desc | 400 (mes malformado, categoria inválida, paginação inválida)                                              |
 
 ## Modelo de dados
 
@@ -143,8 +151,8 @@ dinheiro; só lê `valorCentavos` (inteiro) para os filtros de listagem.
       (crédito, Pluggy `Credit card payment`), **então** ambas → `PAGAMENTO_FATURA` (natureza NEUTRA).
 - [x] **CA-02** — **Dado** crédito "Resgate…" com Pluggy `Investments` e débito "Aplicação…" com
       Pluggy `Investments`, **então** ambos → `INVESTIMENTO`.
-- [x] **CA-03** — **Dado** Pluggy `Same person transfer` (débito ou crédito), **então**
-      `TRANSFERENCIA_INTERNA`.
+- [x] **CA-03** — **Dado** Pluggy `Same person transfer`, **então** a saída é `TRANSFERENCIA_INTERNA` e
+      a entrada é `A_CLASSIFICAR` (revisado em 2026-10-05: o salário do Lucas chega por conta própria).
 - [x] **CA-04** — **Dado** crédito com Pluggy `Transfers`, **então** `A_CLASSIFICAR` (INDEFINIDA);
       **dado** débito com Pluggy `Transfers`, **então** `TRANSFERENCIAS_ENVIADAS` (DESPESA).
 - [x] **CA-05** — **Dado** cada categoria Pluggy do mapa (uma por linha da regra 4), **então**
@@ -186,6 +194,15 @@ dinheiro; só lê `valorCentavos` (inteiro) para os filtros de listagem.
       **quando** `POST /categorizacao/recalcular`, **então** nenhuma fica sem categoria, os 40
       pagamentos de fatura de cada lado são `PAGAMENTO_FATURA`, e o agregado por natureza
       (contagens, sem texto pessoal) é coerente com as regras.
+
+- [x] **CA-21** — **Dado** uma regra `SALARIO` com faixa 80000–150000 e uma entrada de conta própria de
+      R$ 1.044,42 (e 975,85, e as bordas exatas), **então** vira `SALARIO` (origem `REGRA_USUARIO`).
+- [x] **CA-22** — **Dado** a mesma regra e entradas próprias de R$ 10, 50, 120,38 ou 1.500,01, **então** a
+      regra não casa (ficam `A_CLASSIFICAR`); a faixa compara o módulo e aceita só um dos limites.
+- [x] **CA-23** — **Dado** `POST /regras` com mínimo maior que máximo, **então** 400 `FAIXA_INVALIDA`.
+- [x] **CA-24** — **Dado** `PATCH /regras/:id`, **então** só os campos enviados mudam, `null` remove tipo
+      e limites, a combinação com o que já existe não pode inverter a faixa, e campo inválido ou extra,
+      id não-UUID e regra inexistente dão 400/400/404.
 
 ## Plano de testes
 

@@ -167,6 +167,11 @@ regra padrão > fallback (débito → `OUTRAS_DESPESAS`, crédito → `A_CLASSIF
 despesa). Crédito `Transfers` vai para `A_CLASSIFICAR` de propósito: salário, reembolso e dinheiro
 de outra conta própria não são distinguíveis sem regra do usuário — o sistema não adivinha receita.
 
+**Nada que dependa de valor ou de nome está fixo no código.** O que define "isso é salário" é regra
+do usuário (`RegraCategoria`), com faixa de valor opcional e editável por `PATCH /regras/:id` (salário
+mudou → ajusta a regra). Entrada de conta própria é `A_CLASSIFICAR`, não neutra: o salário do usuário
+chega assim e o sistema não presume.
+
 Persistência: `Transacao.categoria` (String validada contra a taxonomia) + `origemCategoria`
 (`REGRA_USUARIO`, `REGRA_PADRAO`, `MANUAL`). Transações novas são categorizadas ao fim de cada sync
 (falha aí é logada e não derruba o sync); `POST /categorizacao/recalcular` reaplica as regras em

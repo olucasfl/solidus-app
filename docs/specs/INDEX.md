@@ -53,16 +53,14 @@ anterior:
 **Fase 1 (specs 01 a 04 implementadas; 02, 03 e 04 foram aprovadas pelo agente sob delegação):**
 
 - [ ] **Revisar as "Suposições" das specs 02, 03 e 04** — foram autoaprovadas; nenhuma humana ainda.
-- [ ] **Criar regras de categoria para as entradas.** Hoje toda transferência recebida cai em
-      `A_CLASSIFICAR` e a taxa de poupança sai `null` em quase todos os meses (o `ENTRADAS_A_CLASSIFICAR`
-      avisa isso). `POST /regras` com o nome do pagador do salário (`SALARIO`), depois
-      `POST /categorizacao/recalcular`. Sem isso a spec 04 não tem número útil.
-- [ ] **Mesclar as branches empilhadas, nesta ordem:** `docs/fecha-spec-01` → `feat/sync-pluggy` →
-      `feat/categorizacao` → `feat/taxa-de-poupanca` (cada uma parte da anterior). A migration
-      `fundacao_auth` que está na `main` tem um `ALTER` em `_prisma_migrations` que quebra o
-      `prisma migrate dev` (shadow database); a correção está em `feat/sync-pluggy`.
-- [ ] **Responder as 5 questões em aberto da spec `05-carteira-caixinhas`** (rascunho, nada implementado):
-      % do CDI de cada Caixinha, imposto bruto×líquido, aportes/resgates, arredondamento, "Gastos".
+- [x] Regra do salário (Sicredi, ≈ R$ 1.044) criada como dado editável; ajustar com `PATCH /regras/:id`
+      se o salário mudar de faixa.
+- [ ] **Classificar as entradas que sobraram como `A_CLASSIFICAR`** (Pix recebido de outras pessoas etc.):
+      são ~R$ 2 a 8 mil por mês, mais que o salário. O sistema não sabe se é renda, reembolso ou dinheiro
+      seu movimentado, então a taxa de poupança continua negativa/duvidosa até você decidir.
+      `GET /transacoes?categoria=A_CLASSIFICAR`, depois `POST /regras` ou `PATCH /transacoes/:id/categoria`.
+- [ ] **Spec `05-carteira-caixinhas`**: as 5 perguntas foram respondidas em 2026-10-05; falta aprovar a
+      versão revisada antes de implementar (tabelas de IR/IOF a confirmar por você).
 - [ ] No deploy, **medir o `TRUST_PROXY_HOPS`** (ARCHITECTURE.md §7) — sem isso o limite de tentativas é global.
 - [ ] Agendar o `POST /sync` (Render Cron Job ou GitHub Actions, ADR 0005) — só quando houver deploy.
 

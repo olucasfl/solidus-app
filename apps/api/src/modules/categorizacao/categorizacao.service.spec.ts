@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CategorizacaoService } from './categorizacao.service';
 
@@ -6,6 +6,8 @@ function montar() {
   const prisma = {
     regraCategoria: {
       findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn(),
+      update: jest.fn(),
       create: jest.fn(),
       deleteMany: jest.fn(),
     },
@@ -25,6 +27,7 @@ function linha(p: Record<string, unknown>) {
     descricao: 'Compra',
     tipo: 'DEBITO',
     categoriaPluggy: null,
+    valorCentavos: -1000,
     categoria: null,
     origemCategoria: null,
     ...p,
@@ -39,20 +42,118 @@ describe('CategorizacaoService — regras', () => {
       padrao: 'padaria',
       categoria: 'MERCADO',
       tipo: null,
+      valorMinCentavos: null,
+      valorMaxCentavos: null,
       prioridade: 0,
     });
 
     const r = await service.criarRegra({ padrao: 'padaria', categoria: 'MERCADO' });
 
     expect(prisma.regraCategoria.create).toHaveBeenCalledWith({
-      data: { padrao: 'padaria', categoria: 'MERCADO', tipo: null, prioridade: 0 },
+      data: {
+        padrao: 'padaria',
+        categoria: 'MERCADO',
+        tipo: null,
+        valorMinCentavos: null,
+        valorMaxCentavos: null,
+        prioridade: 0,
+      },
     });
     expect(r).toEqual({
       id: 'r1',
       padrao: 'padaria',
       categoria: 'MERCADO',
       tipo: null,
+      valorMinCentavos: null,
+      valorMaxCentavos: null,
       prioridade: 0,
+    });
+  });
+
+  it('CA-23: faixa com mínimo maior que o máximo dá 400 FAIXA_INVALIDA e nada é gravado', async () => {
+    const { prisma, service } = montar();
+
+    const erro = await service
+      .criarRegra({
+        padrao: 'x',
+        categoria: 'SALARIO',
+        valorMinCentavos: 200,
+        valorMaxCentavos: 100,
+      })
+      .catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).getResponse()).toMatchObject({ code: 'FAIXA_INVALIDA' });
+    expect(prisma.regraCategoria.create).not.toHaveBeenCalled();
+  });
+
+  describe('CA-24: o usuário edita a regra (PATCH) sem mexer em código', () => {
+    const regraBanco = {
+      id: 'r1',
+      padrao: 'lucas farias leandro',
+      categoria: 'SALARIO',
+      tipo: 'CREDITO',
+      valorMinCentavos: 80_000,
+      valorMaxCentavos: 150_000,
+      prioridade: 5,
+    };
+
+    it('ajusta só a faixa (o salário subiu) e preserva o resto', async () => {
+      const { prisma, service } = montar();
+      prisma.regraCategoria.findUnique.mockResolvedValue(regraBanco);
+      prisma.regraCategoria.update.mockResolvedValue({ ...regraBanco, valorMaxCentavos: 300_000 });
+
+      const r = await service.atualizarRegra('r1', { valorMaxCentavos: 300_000 });
+
+      expect(prisma.regraCategoria.update).toHaveBeenCalledWith({
+        where: { id: 'r1' },
+        data: { valorMinCentavos: 80_000, valorMaxCentavos: 300_000 },
+      });
+      expect(r.valorMaxCentavos).toBe(300_000);
+    });
+
+    it('null remove a faixa e o tipo', async () => {
+      const { prisma, service } = montar();
+      prisma.regraCategoria.findUnique.mockResolvedValue(regraBanco);
+      prisma.regraCategoria.update.mockResolvedValue({
+        ...regraBanco,
+        tipo: null,
+        valorMinCentavos: null,
+        valorMaxCentavos: null,
+      });
+
+      await service.atualizarRegra('r1', {
+        tipo: null,
+        valorMinCentavos: null,
+        valorMaxCentavos: null,
+      });
+
+      expect(prisma.regraCategoria.update).toHaveBeenCalledWith({
+        where: { id: 'r1' },
+        data: { tipo: null, valorMinCentavos: null, valorMaxCentavos: null },
+      });
+    });
+
+    it('rejeita faixa que ficaria invertida pela combinação com o que já existe', async () => {
+      const { prisma, service } = montar();
+      prisma.regraCategoria.findUnique.mockResolvedValue(regraBanco);
+
+      await expect(service.atualizarRegra('r1', { valorMinCentavos: 200_000 })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.regraCategoria.update).not.toHaveBeenCalled();
+    });
+
+    it('regra inexistente dá 404 REGRA_NAO_ENCONTRADA', async () => {
+      const { prisma, service } = montar();
+      prisma.regraCategoria.findUnique.mockResolvedValue(null);
+
+      const erro = await service.atualizarRegra('x', { prioridade: 1 }).catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(NotFoundException);
+      expect((erro as NotFoundException).getResponse()).toMatchObject({
+        code: 'REGRA_NAO_ENCONTRADA',
+      });
     });
   });
 

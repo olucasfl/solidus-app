@@ -13,9 +13,11 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { CategorizacaoService } from './categorizacao.service';
+import { AtualizarRegraDto } from './dto/atualizar-regra.dto';
 import { CriarRegraDto } from './dto/criar-regra.dto';
 
 // Tudo autenticado pelo guard global (nenhum @Public()).
@@ -36,6 +38,14 @@ export class CategorizacaoController {
   @Post('regras')
   criarRegra(@Body() dto: CriarRegraDto): Promise<RegraCategoria> {
     return this.categorizacao.criarRegra(dto);
+  }
+
+  @Patch('regras/:id')
+  atualizarRegra(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AtualizarRegraDto,
+  ): Promise<RegraCategoria> {
+    return this.categorizacao.atualizarRegra(id, dto);
   }
 
   @Delete('regras/:id')

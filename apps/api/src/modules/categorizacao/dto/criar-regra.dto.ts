@@ -19,6 +19,16 @@ export class CriarRegraDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  valorMinCentavos?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  valorMaxCentavos?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
   @Max(1000)
   prioridade?: number;
 }

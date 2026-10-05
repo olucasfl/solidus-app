@@ -8,12 +8,17 @@ export interface EntradaCategorizacao {
   descricao: string;
   tipo: TipoTransacao;
   categoriaPluggy: string | null;
+  /** Assinado, como gravado; a faixa de uma regra compara o MÓDULO. */
+  valorCentavos: number;
 }
 
 export interface RegraUsuario {
   padrao: string;
   categoria: CategoriaId;
   tipo: TipoTransacao | null;
+  /** Faixa opcional sobre o módulo do valor (ex.: salário ≈ R$ 1.044: 80000 a 150000). */
+  valorMinCentavos?: number | null;
+  valorMaxCentavos?: number | null;
   prioridade: number;
   criadoEm: Date;
 }
@@ -78,7 +83,11 @@ function regraPadrao(entrada: EntradaCategorizacao): CategoriaId {
   }
 
   const pluggy = entrada.categoriaPluggy ? normalizar(entrada.categoriaPluggy) : '';
-  if (pluggy === 'same person transfer') return 'TRANSFERENCIA_INTERNA';
+  if (pluggy === 'same person transfer') {
+    // Saída para conta própria é neutra. ENTRADA de conta própria é ambígua (pode ser salário que
+    // chega por outra conta): fica A_CLASSIFICAR e aparece nos avisos — quem decide é o usuário.
+    return entrada.tipo === 'DEBITO' ? 'TRANSFERENCIA_INTERNA' : 'A_CLASSIFICAR';
+  }
   if (
     pluggy === 'investments' ||
     pluggy === 'fixed income' ||
@@ -90,6 +99,13 @@ function regraPadrao(entrada: EntradaCategorizacao): CategoriaId {
   return (
     padraoPorTipo(entrada) ?? (entrada.tipo === 'DEBITO' ? 'OUTRAS_DESPESAS' : 'A_CLASSIFICAR')
   );
+}
+
+function dentroDaFaixa(regra: RegraUsuario, entrada: EntradaCategorizacao): boolean {
+  const modulo = Math.abs(entrada.valorCentavos);
+  const min = regra.valorMinCentavos ?? null;
+  const max = regra.valorMaxCentavos ?? null;
+  return (min === null || modulo >= min) && (max === null || modulo <= max);
 }
 
 /** Regras do usuário, da mais forte para a mais fraca: prioridade maior; empate, a mais antiga. */
@@ -112,7 +128,12 @@ export function categorizar(
   for (const regra of ordenar(regrasUsuario)) {
     const padrao = normalizar(regra.padrao);
     const tipoCasa = regra.tipo === null || regra.tipo === entrada.tipo;
-    if (padrao.length > 0 && tipoCasa && descricao.includes(padrao)) {
+    if (
+      padrao.length > 0 &&
+      tipoCasa &&
+      dentroDaFaixa(regra, entrada) &&
+      descricao.includes(padrao)
+    ) {
       return { categoria: regra.categoria, origem: 'REGRA_USUARIO' };
     }
   }
