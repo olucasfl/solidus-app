@@ -5,8 +5,8 @@ Memória do produto para sessões futuras. O que muda rápido (estado de impleme
 
 ## Visão
 
-App de finanças pessoais **para qualquer pessoa** (cada uma com os próprios dados; o Lucas é o primeiro
-usuário), para responder três perguntas:
+App de finanças pessoais **de uso pessoal** (uma conta só, a do Lucas, com login obrigatório), para
+responder três perguntas:
 **"posso gastar isso?"**, **"onde coloco esse dinheiro?"**, **"estou melhorando?"**.
 
 O app organiza, calcula e verifica regras minhas. **Não é consultor** (não dá recomendação de
@@ -29,12 +29,12 @@ Não reabra sem motivo técnico forte (ver `.claude/rules/RULES.md` para como pe
   é o único lugar que decide o que conta como "inteiro".
 - **Taxa de poupança** = `(receitas - despesas reais) / receitas` no mês. Aporte em investimento
   **não** é despesa. Transferência interna fica fora das métricas.
-- **Auth multiusuário** (mudou em 2026-10-05; antes era single-user com registro desabilitado): contas
-  criadas por cadastro com **e-mail verificado**; senha com argon2; access token curto + refresh em
-  cookie httpOnly. Todas as rotas exigem autenticação por padrão; só login, cadastro, verificação,
-  recuperação de senha e `/health` são `@Public()`. O usuário do seed continua existindo (é o primeiro
-  usuário). **Isolamento por usuário feito no código** (o Prisma ignora o RLS do Postgres): todo dado
-  financeiro é filtrado pelo usuário da sessão. Plano e etapas: spec `06-multiusuario`.
+- **Auth de uso pessoal** (decisão de 2026-10-05: o app é só do dono, mas exige conta por segurança):
+  uma conta criada por seed, **sem cadastro público**; senha com argon2; access token curto + refresh em
+  cookie httpOnly. Todas as rotas exigem autenticação por padrão; só login e `/health` são `@Public()`.
+  O isolamento por `userId` (feito na etapa 1 da spec `06-multiusuario`, hoje obsoleta) fica como defesa
+  em profundidade. Motivo do cancelamento do multiusuário: o Meu Pluggy é gratuito só para uso pessoal; o
+  plano de produção do Pluggy para outras pessoas começa em R$ 2.500/mês.
 - **Nada concreto para uma pessoa só**: Caixinhas, percentuais, regras de categoria, convenção de
   rendimento e tabelas de imposto são dados editáveis; o código só sabe _como calcular_.
 - **Banco (Supabase)**: `DATABASE_URL` é o transaction pooler (6543,

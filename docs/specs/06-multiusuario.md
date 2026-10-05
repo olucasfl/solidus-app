@@ -1,8 +1,11 @@
 # Spec: Multiusuário (o Solidus como app para outras pessoas)
 
-> Status: **etapa 1 implementada; etapas 2–5 bloqueadas.** Em 2026-10-05 o humano aprovou ("Sim, pode
-> alterar") os itens 1 e 2 abaixo — `RULES.md` §3 e `docs/produto.md` já foram alterados. Os itens 3
-> (`userId` obrigatório, `RULES.md` §6) e 4 (provedor de e-mail, `RULES.md` §12) seguem aguardando "sim".
+> Status: **🗑️ obsoleta (2026-10-05).** O humano decidiu manter o app só para uso pessoal, com login
+> obrigatório e sem cadastro público. Motivo técnico: o Meu Pluggy é gratuito só para uso pessoal e o
+> plano de produção para outras pessoas custa a partir de R$ 2.500/mês. A **etapa 1** (isolamento por
+> `userId`) já foi implementada e **permanece** como defesa em profundidade; as etapas 2–5 não serão feitas.
+> Os "sim" dos itens 1 e 2 abaixo, dados antes, foram **revertidos** nas regras (`RULES.md` §3,
+> `docs/produto.md`).
 
 ## Origem
 
