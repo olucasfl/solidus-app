@@ -5,6 +5,7 @@ import { type ContaPluggy, type TransacaoPluggy } from '../../domain/sync/mapear
 import { type EnvironmentVariables } from '../../config/env.validation';
 import { PrismaService } from '../../database/prisma.service';
 import { type CategorizacaoService } from '../categorizacao/categorizacao.service';
+import { type RendaService } from '../renda/renda.service';
 import { PluggyGateway, PluggySdkGateway } from './pluggy.gateway';
 import {
   PluggyIndisponivelError,
@@ -39,7 +40,7 @@ function tx(id: string, parcial: Partial<TransacaoPluggy> = {}): TransacaoPluggy
   };
 }
 
-function montar(itemId: string | undefined = 'item-1') {
+function montar(itemId: string | undefined = 'item-1', segredoContraparte?: string) {
   const prisma = {
     user: { findUnique: jest.fn().mockResolvedValue({ id: U }) },
     conta: {
@@ -59,16 +60,25 @@ function montar(itemId: string | undefined = 'item-1') {
     listarTransacoes: jest.fn().mockResolvedValue([]),
   };
   const config = {
-    get: jest.fn((chave: string) => (chave === 'SEED_USER_EMAIL' ? 'dono@exemplo.com' : itemId)),
+    get: jest.fn((chave: string) => {
+      if (chave === 'SEED_USER_EMAIL') return 'dono@exemplo.com';
+      if (chave === 'CONTRAPARTE_HMAC_SECRET') return segredoContraparte;
+      return itemId;
+    }),
   };
-  const categorizacao = { categorizarPendentes: jest.fn().mockResolvedValue(0) };
+  const categorizacao = {
+    categorizarPendentes: jest.fn().mockResolvedValue(0),
+    recalcular: jest.fn().mockResolvedValue({ analisadas: 0, alteradas: 0 }),
+  };
+  const renda = { reconhecerRecorrentes: jest.fn().mockResolvedValue(0) };
   const service = new SyncService(
     prisma as unknown as PrismaService,
     gateway as unknown as PluggyGateway,
     config as unknown as ConfigService<EnvironmentVariables, true>,
     categorizacao as unknown as CategorizacaoService,
+    renda as unknown as RendaService,
   );
-  return { prisma, gateway, categorizacao, service };
+  return { prisma, gateway, categorizacao, renda, service };
 }
 
 describe('SyncService.sincronizar', () => {
@@ -206,6 +216,119 @@ describe('SyncService.sincronizar', () => {
 
     categorizacao.categorizarPendentes.mockRejectedValue(new Error('detalhe interno'));
     await expect(service.sincronizar()).resolves.toMatchObject({ contas: 1 });
+  });
+
+  describe('contraparte e backfill (spec 07)', () => {
+    const SEGREDO = 's'.repeat(32);
+    const pix = (id: string) =>
+      tx(id, {
+        type: 'CREDIT',
+        amount: 100,
+        category: 'Transfers',
+        description: 'Transferência Recebida|MARIA TESTE',
+        paymentData: {
+          payer: { name: 'Maria Teste', documentNumber: { value: '123.456.789-09' } },
+        },
+      });
+
+    it('CA-01: grava a chave (hash), o nome e a máscara; o documento em claro não vai ao banco', async () => {
+      const { prisma, gateway, service } = montar('item-1', SEGREDO);
+      gateway.listarTransacoes.mockResolvedValue([pix('t1')]);
+
+      await service.sincronizar();
+
+      const gravado = prisma.transacao.createMany.mock.calls[0]![0].data[0];
+      expect(gravado.contraparteChave).toMatch(/^[0-9a-f]{64}$/);
+      expect(gravado.contraparteNome).toBe('Maria Teste');
+      expect(gravado.contraparteDocMascarado).toBe('***.456.789-**');
+      expect(JSON.stringify(prisma.transacao.createMany.mock.calls)).not.toContain('12345678909');
+      expect(JSON.stringify(prisma.transacao.createMany.mock.calls)).not.toContain(
+        '123.456.789-09',
+      );
+    });
+
+    it('CA-01: transação já gravada SEM contraparte é atualizada quando o Pluggy passa a trazê-la (backfill)', async () => {
+      const { prisma, gateway, service } = montar('item-1', SEGREDO);
+      gateway.listarTransacoes.mockResolvedValue([pix('t1')]);
+      prisma.transacao.findMany.mockResolvedValue([
+        {
+          pluggyTransactionId: 't1',
+          data: new Date('2026-09-20T00:00:00.000Z'),
+          descricao: 'Transferência Recebida|MARIA TESTE',
+          valorCentavos: 10000,
+          status: 'EFETIVADA',
+          categoriaPluggy: 'Transfers',
+          contraparteChave: null,
+          contraparteNome: null,
+          contraparteDocMascarado: null,
+        },
+      ]);
+
+      const r = await service.sincronizar();
+
+      expect(r.transacoesAtualizadas).toBe(1);
+      expect(prisma.transacao.update.mock.calls[0]![0].data.contraparteChave).toMatch(
+        /^[0-9a-f]{64}$/,
+      );
+    });
+
+    it('?completo=true ignora a janela recente e busca TODO o histórico', async () => {
+      const { prisma, gateway, service } = montar('item-1', SEGREDO);
+      prisma.transacao.aggregate.mockResolvedValue({
+        _max: { data: new Date('2026-09-30T00:00:00Z') },
+      });
+
+      await service.sincronizar({ completo: true });
+
+      expect(gateway.listarTransacoes).toHaveBeenCalledWith('pl-conta-1', undefined);
+      expect(prisma.transacao.aggregate).not.toHaveBeenCalled();
+    });
+
+    it('sync comum continua incremental (usa a janela)', async () => {
+      const { prisma, gateway, service } = montar('item-1', SEGREDO);
+      prisma.transacao.aggregate.mockResolvedValue({
+        _max: { data: new Date('2026-09-30T00:00:00Z') },
+      });
+
+      await service.sincronizar();
+
+      expect(gateway.listarTransacoes).toHaveBeenCalledWith('pl-conta-1', '2026-08-31');
+    });
+
+    it('sync completo reaplica a categorização em tudo (recalcular), não só as pendentes', async () => {
+      const { categorizacao, service } = montar('item-1', SEGREDO);
+
+      await service.sincronizar({ completo: true });
+
+      expect(categorizacao.recalcular).toHaveBeenCalledWith(U);
+      expect(categorizacao.categorizarPendentes).not.toHaveBeenCalled();
+    });
+
+    it('fonte recorrente reconhecida agora também reaplica a categorização', async () => {
+      const { categorizacao, renda, service } = montar('item-1', SEGREDO);
+      renda.reconhecerRecorrentes.mockResolvedValue(1);
+
+      await service.sincronizar();
+
+      expect(renda.reconhecerRecorrentes).toHaveBeenCalledWith(U);
+      expect(categorizacao.recalcular).toHaveBeenCalledWith(U);
+    });
+
+    it('sync comum sem fonte nova só categoriza as pendentes', async () => {
+      const { categorizacao, service } = montar('item-1', SEGREDO);
+
+      await service.sincronizar();
+
+      expect(categorizacao.categorizarPendentes).toHaveBeenCalledWith(U);
+      expect(categorizacao.recalcular).not.toHaveBeenCalled();
+    });
+
+    it('falha ao reconhecer fontes não derruba o sync (já gravou)', async () => {
+      const { renda, service } = montar('item-1', SEGREDO);
+      renda.reconhecerRecorrentes.mockRejectedValue(new Error('x'));
+
+      await expect(service.sincronizar()).resolves.toBeDefined();
+    });
   });
 
   it('CA-12: sem PLUGGY_ITEM_ID responde 503 e não chama o gateway', async () => {

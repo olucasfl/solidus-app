@@ -13,6 +13,7 @@ import { CarteiraModule } from './modules/carteira/carteira.module';
 import { CategorizacaoModule } from './modules/categorizacao/categorizacao.module';
 import { HealthModule } from './modules/health/health.module';
 import { PoupancaModule } from './modules/poupanca/poupanca.module';
+import { RendaModule } from './modules/renda/renda.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { TransacoesModule } from './modules/transacoes/transacoes.module';
 
@@ -36,6 +37,7 @@ import { TransacoesModule } from './modules/transacoes/transacoes.module';
     CategorizacaoModule,
     TransacoesModule,
     PoupancaModule,
+    RendaModule,
     CarteiraModule,
     // Último de propósito: só casa rota que nenhum módulo anterior casou (ver CatchAllModule).
     CatchAllModule,

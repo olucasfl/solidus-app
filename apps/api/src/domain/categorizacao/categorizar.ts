@@ -1,8 +1,9 @@
 import { type CategoriaId } from '@solidus/shared';
+import { categoriaDaFonte, type FonteAplicavel } from '../renda/aplicar-fontes';
 import { normalizar } from './normalizar';
 
 export type TipoTransacao = 'DEBITO' | 'CREDITO';
-export type OrigemRegra = 'REGRA_USUARIO' | 'REGRA_PADRAO';
+export type OrigemRegra = 'REGRA_USUARIO' | 'REGRA_PADRAO' | 'FONTE_RENDA';
 
 export interface EntradaCategorizacao {
   descricao: string;
@@ -10,6 +11,9 @@ export interface EntradaCategorizacao {
   categoriaPluggy: string | null;
   /** Assinado, como gravado; a faixa de uma regra compara o MÓDULO. */
   valorCentavos: number;
+  /** Para a fonte de renda (spec 07): sem contraparte ou sem data, nenhuma fonte casa. */
+  contraparteChave?: string | null;
+  data?: Date;
 }
 
 export interface RegraUsuario {
@@ -86,9 +90,9 @@ function regraPadrao(entrada: EntradaCategorizacao): CategoriaId {
 
   const pluggy = entrada.categoriaPluggy ? normalizar(entrada.categoriaPluggy) : '';
   if (pluggy === 'same person transfer') {
-    // Saída para conta própria é neutra. ENTRADA de conta própria é ambígua (pode ser salário que
-    // chega por outra conta): fica A_CLASSIFICAR e aparece nos avisos — quem decide é o usuário.
-    return entrada.tipo === 'DEBITO' ? 'TRANSFERENCIA_INTERNA' : 'A_CLASSIFICAR';
+    // Entre contas próprias, nos dois sentidos: neutra (spec 07). Salário que chega por outra conta
+    // própria é resolvido por uma fonte de renda ou por uma regra do usuário, que vêm antes desta.
+    return 'TRANSFERENCIA_INTERNA';
   }
   if (
     pluggy === 'investments' ||
@@ -118,12 +122,15 @@ function ordenar(regras: readonly RegraUsuario[]): RegraUsuario[] {
 }
 
 /**
- * Categoria da transação por regra (a categoria MANUAL é decidida por quem persiste: nunca chega
- * aqui). Casamento por substring normalizada — nunca regex, porque o padrão vem do usuário.
+ * Categoria da transação (a categoria MANUAL é decidida por quem persiste: nunca chega aqui).
+ * Prioridade, da mais forte para a mais fraca (spec 07): regra do usuário > fonte de renda >
+ * padrão (categoria do Pluggy). A exceção do usuário sempre vence a automação. Casamento das
+ * regras por substring normalizada — nunca regex, porque o padrão vem do usuário.
  */
 export function categorizar(
   entrada: EntradaCategorizacao,
   regrasUsuario: readonly RegraUsuario[],
+  fontes: readonly FonteAplicavel[] = [],
 ): ResultadoCategorizacao {
   const descricao = normalizar(entrada.descricao);
 
@@ -137,6 +144,16 @@ export function categorizar(
       descricao.includes(padrao)
     ) {
       return { categoria: regra.categoria, origem: 'REGRA_USUARIO' };
+    }
+  }
+
+  if (entrada.data) {
+    const daFonte = categoriaDaFonte(
+      { tipo: entrada.tipo, contraparteChave: entrada.contraparteChave, data: entrada.data },
+      fontes,
+    );
+    if (daFonte) {
+      return { categoria: daFonte, origem: 'FONTE_RENDA' };
     }
   }
 

@@ -9,6 +9,7 @@ const MODELOS_DO_USUARIO = [
   'regraCategoria',
   'caixinha',
   'movimentoCaixinha',
+  'fonteRenda',
 ];
 const OPERACOES = [
   'findMany',

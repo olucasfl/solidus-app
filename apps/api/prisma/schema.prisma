@@ -22,8 +22,8 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// Usuário do app (spec 01 e 06). O primeiro vem do seed; o cadastro público (spec 06, etapa 2) ainda
-// não está exposto. Todo dado financeiro pertence a um usuário (`userId`).
+// Usuário do app (spec 01 e 06). Só existe o do seed: o app é de uso pessoal e não terá cadastro
+// público (spec 06 obsoleta). Todo dado financeiro pertence a um usuário (`userId`).
 model User {
   id           String        @id @default(uuid())
   email        String        @unique @db.VarChar(254)
@@ -33,13 +33,14 @@ model User {
   // null = USUARIO. ADMIN edita o que é global (tabelas de imposto).
   papel        PapelUsuario?
 
-  sessoes    RefreshSession[]
-  contas     Conta[]
-  transacoes Transacao[]
-  syncRuns   SyncRun[]
-  regras     RegraCategoria[]
-  caixinhas  Caixinha[]
-  movimentos MovimentoCaixinha[]
+  sessoes     RefreshSession[]
+  contas      Conta[]
+  transacoes  Transacao[]
+  syncRuns    SyncRun[]
+  regras      RegraCategoria[]
+  caixinhas   Caixinha[]
+  movimentos  MovimentoCaixinha[]
+  fontesRenda FonteRenda[]
 }
 
 enum PapelUsuario {
@@ -111,30 +112,36 @@ model Conta {
 }
 
 model Transacao {
-  id                  String             @id @default(uuid())
+  id                      String             @id @default(uuid())
   // dono do dado (spec 06): o código SEMPRE filtra por ele (o Prisma ignora o RLS do Postgres)
-  userId              String?
-  user                User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  pluggyTransactionId String             @unique
-  contaId             String
-  conta               Conta              @relation(fields: [contaId], references: [id], onDelete: Cascade)
-  data                DateTime
-  descricao           String             @db.VarChar(500)
+  userId                  String?
+  user                    User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pluggyTransactionId     String             @unique
+  contaId                 String
+  conta                   Conta              @relation(fields: [contaId], references: [id], onDelete: Cascade)
+  data                    DateTime
+  descricao               String             @db.VarChar(500)
   // negativo = saída, positivo = entrada; o sinal vem do `type` do Pluggy, nunca do valor cru
-  valorCentavos       Int
-  tipo                TipoTransacao
-  status              StatusTransacao
-  moeda               String             @db.VarChar(3)
+  valorCentavos           Int
+  tipo                    TipoTransacao
+  status                  StatusTransacao
+  moeda                   String             @db.VarChar(3)
   // dado auxiliar do Pluggy; a categoria do Solidus vem da spec 03-categorizacao
-  categoriaPluggy     String?            @db.VarChar(120)
+  categoriaPluggy         String?            @db.VarChar(120)
   // categoria do Solidus (id da taxonomia em packages/shared, validado no código) — spec 03
-  categoria           String?            @db.VarChar(40)
-  origemCategoria     OrigemCategoria?
-  criadoEm            DateTime           @default(now())
-  atualizadoEm        DateTime           @updatedAt
-  movimentoCaixinha   MovimentoCaixinha?
+  categoria               String?            @db.VarChar(40)
+  origemCategoria         OrigemCategoria?
+  // spec 07: quem pagou (entrada) ou recebeu (saída). Chave = HMAC do documento (nunca em claro);
+  // nome e máscara só servem para exibir. Nulos quando o Pluggy não manda documento.
+  contraparteChave        String?            @db.VarChar(64)
+  contraparteNome         String?            @db.VarChar(200)
+  contraparteDocMascarado String?            @db.VarChar(20)
+  criadoEm                DateTime           @default(now())
+  atualizadoEm            DateTime           @updatedAt
+  movimentoCaixinha       MovimentoCaixinha?
 
   @@index([contaId, data])
+  @@index([userId, contraparteChave])
   @@index([userId, data])
   @@index([data])
   @@index([categoria])
@@ -163,6 +170,41 @@ enum OrigemCategoria {
   REGRA_USUARIO
   REGRA_PADRAO
   MANUAL
+  // spec 07: a categoria veio de uma fonte de renda (salário marcado ou pagador recorrente)
+  FONTE_RENDA
+}
+
+// --- Fontes de renda (spec 07-salario-e-pix-automatico) ---
+
+enum TipoFonteRenda {
+  SALARIO
+  RECORRENTE
+}
+
+enum OrigemFonteRenda {
+  MANUAL
+  AUTOMATICA
+}
+
+// Uma origem (contraparte) que paga renda. `contraparteChave` é o HMAC do documento de quem paga: o
+// CPF/CNPJ nunca é gravado em claro, e a chave não sai da API (nenhum DTO a devolve).
+model FonteRenda {
+  id               String           @id @default(uuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tipo             TipoFonteRenda
+  origem           OrigemFonteRenda
+  contraparteChave String           @db.VarChar(64)
+  nome             String?          @db.VarChar(200)
+  docMascarado     String?          @db.VarChar(20)
+  // por DIA (UTC); `vigenteAte` nulo = sem fim. Trocar a origem encerra a antiga e abre a nova.
+  vigenteDesde     DateTime
+  vigenteAte       DateTime?
+  ativa            Boolean          @default(true)
+  criadoEm         DateTime         @default(now())
+  atualizadoEm     DateTime         @updatedAt
+
+  @@index([userId, contraparteChave])
 }
 
 model RegraCategoria {

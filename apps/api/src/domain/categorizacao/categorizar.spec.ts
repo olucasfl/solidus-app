@@ -52,11 +52,13 @@ describe('regras padrão por descrição e por tipo de movimento', () => {
     expect(cat({ descricao: 'Aplicação X', categoriaPluggy: 'Fixed income' })).toBe('INVESTIMENTO');
   });
 
-  it('CA-03: saída para conta própria é neutra; ENTRADA de conta própria é A_CLASSIFICAR (o sistema não presume que não é salário)', () => {
+  it('CA-03 (spec 07): conta própria é neutra nos DOIS sentidos, não mais A_CLASSIFICAR', () => {
     expect(cat({ tipo: 'DEBITO', categoriaPluggy: 'Same person transfer' })).toBe(
       'TRANSFERENCIA_INTERNA',
     );
-    expect(cat({ tipo: 'CREDITO', categoriaPluggy: 'Same person transfer' })).toBe('A_CLASSIFICAR');
+    expect(cat({ tipo: 'CREDITO', categoriaPluggy: 'Same person transfer' })).toBe(
+      'TRANSFERENCIA_INTERNA',
+    );
   });
 
   it('CA-04: Pix/transferência de e para pessoas tem categoria própria (neutra por padrão)', () => {
@@ -195,10 +197,10 @@ describe('regra com faixa de valor (salário ≈ R$ 1.044 vs. transferências pr
     }
   });
 
-  it('CA-22: fora da faixa a regra não casa e cai na padrão (entrada própria a classificar, nunca salário por palpite)', () => {
+  it('CA-22: fora da faixa a regra não casa e cai na padrão (entrada própria é neutra, nunca salário por palpite)', () => {
     for (const valor of [1_000, 5_000, 12_038, 79_999, 150_001]) {
       expect(categorizar(propria(valor), [salario])).toEqual({
-        categoria: 'A_CLASSIFICAR',
+        categoria: 'TRANSFERENCIA_INTERNA',
         origem: 'REGRA_PADRAO',
       });
     }
@@ -244,5 +246,61 @@ describe('taxonomia', () => {
         .map((c) => c.id)
         .sort(),
     ).toEqual(['OUTRAS_RECEITAS', 'RENDIMENTOS_CASHBACK', 'SALARIO']);
+  });
+});
+
+describe('fonte de renda na categorização (spec 07)', () => {
+  const fonteSalario = {
+    tipo: 'SALARIO' as const,
+    chave: 'origem-x',
+    vigenteDesde: new Date('2026-01-01T00:00:00Z'),
+    vigenteAte: null,
+    ativa: true,
+  };
+  const pix = (p: Partial<EntradaCategorizacao> = {}) =>
+    entrada({
+      tipo: 'CREDITO',
+      categoriaPluggy: 'Transfers',
+      valorCentavos: 100000,
+      contraparteChave: 'origem-x',
+      data: new Date('2026-03-05T12:00:00Z'),
+      ...p,
+    });
+
+  it('entrada da origem marcada como salário vira SALARIO com origem FONTE_RENDA', () => {
+    expect(categorizar(pix(), [], [fonteSalario])).toEqual({
+      categoria: 'SALARIO',
+      origem: 'FONTE_RENDA',
+    });
+  });
+
+  it('sem a fonte, o mesmo Pix de pessoa continua no padrão (PIX_RECEBIDO_DE_PESSOAS)', () => {
+    expect(categorizar(pix(), [], [])).toEqual({
+      categoria: 'PIX_RECEBIDO_DE_PESSOAS',
+      origem: 'REGRA_PADRAO',
+    });
+  });
+
+  it('a regra do usuário vence a fonte de renda', () => {
+    const r = regra({ padrao: 'algo', categoria: 'OUTRAS_RECEITAS' });
+    expect(categorizar(pix({ descricao: 'Algo' }), [r], [fonteSalario])).toEqual({
+      categoria: 'OUTRAS_RECEITAS',
+      origem: 'REGRA_USUARIO',
+    });
+  });
+
+  it('a fonte vence a categoria do Pluggy e o padrão "Same person transfer"', () => {
+    expect(
+      categorizar(pix({ categoriaPluggy: 'Same person transfer' }), [], [fonteSalario]).categoria,
+    ).toBe('SALARIO');
+  });
+
+  it('fora da vigência a fonte não se aplica', () => {
+    const encerrada = { ...fonteSalario, vigenteAte: new Date('2026-02-28T00:00:00Z') };
+    expect(categorizar(pix(), [], [encerrada]).categoria).toBe('PIX_RECEBIDO_DE_PESSOAS');
+  });
+
+  it('sem data na entrada nenhuma fonte casa (nunca chuta)', () => {
+    expect(categorizar(pix({ data: undefined }), [], [fonteSalario]).origem).toBe('REGRA_PADRAO');
   });
 });

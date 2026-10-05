@@ -31,7 +31,7 @@
     "@nestjs/throttler": "^6.7.1",
     "@prisma/client": "^6.3.0",
     "@solidus/shared": "workspace:*",
-    "argon2": "^0.45.1",
+    "argon2": "0.44.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "cookie-parser": "^1.4.7",

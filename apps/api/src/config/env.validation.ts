@@ -94,6 +94,17 @@ export class EnvironmentVariables {
   })
   SYNC_CRON_TOKEN: string;
 
+  /**
+   * Segredo do HMAC que transforma o documento (CPF/CNPJ) da contraparte numa chave de comparação
+   * (spec 07). Trocá-lo invalida todas as chaves já gravadas (as fontes de renda deixam de casar),
+   * então é gerado uma vez, como os `JWT_*_SECRET`.
+   */
+  @IsString()
+  @MinLength(JWT_SECRET_MIN_LENGTH, {
+    message: `CONTRAPARTE_HMAC_SECRET deve ter pelo menos ${JWT_SECRET_MIN_LENGTH} caracteres`,
+  })
+  CONTRAPARTE_HMAC_SECRET: string;
+
   /** Chat com LLM (Fase 4). Ausente até lá — fica vazia de propósito. */
   @IsOptional()
   @IsString()

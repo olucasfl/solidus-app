@@ -3,11 +3,14 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { OrigemCategoria, type Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { categorizar, type RegraUsuario } from '../../domain/categorizacao/categorizar';
+import { type FonteAplicavel } from '../../domain/renda/aplicar-fontes';
 import { AtualizarRegraDto } from './dto/atualizar-regra.dto';
 import { CriarRegraDto } from './dto/criar-regra.dto';
 
 interface LinhaParaCategorizar {
   id: string;
+  data: Date;
+  contraparteChave: string | null;
   descricao: string;
   tipo: 'DEBITO' | 'CREDITO';
   categoriaPluggy: string | null;
@@ -18,6 +21,8 @@ interface LinhaParaCategorizar {
 
 const SELECT_LINHA = {
   id: true,
+  data: true,
+  contraparteChave: true,
   descricao: true,
   tipo: true,
   categoriaPluggy: true,
@@ -127,12 +132,15 @@ export class CategorizacaoService {
     userId: string,
     id: string,
   ): Promise<{ categoria: CategoriaId; origemCategoria: OrigemCategoria }> {
-    const regras = await this.carregarRegras(userId);
+    const [regras, fontes] = await Promise.all([
+      this.carregarRegras(userId),
+      this.carregarFontes(userId),
+    ]);
     const linha = await this.prisma.transacao.findFirstOrThrow({
       where: { id, userId },
       select: SELECT_LINHA,
     });
-    const { categoria, origem } = categorizar(linha, regras);
+    const { categoria, origem } = categorizar(linha, regras, fontes);
     await this.prisma.transacao.update({
       where: { id, userId },
       data: { categoria, origemCategoria: origem },
@@ -145,14 +153,17 @@ export class CategorizacaoService {
     if (linhas.length === 0) {
       return 0;
     }
-    const regras = await this.carregarRegras(userId);
+    const [regras, fontes] = await Promise.all([
+      this.carregarRegras(userId),
+      this.carregarFontes(userId),
+    ]);
     const grupos = new Map<
       string,
       { categoria: CategoriaId; origem: OrigemCategoria; ids: string[] }
     >();
 
     for (const linha of linhas) {
-      const { categoria, origem } = categorizar(linha, regras);
+      const { categoria, origem } = categorizar(linha, regras, fontes);
       if (linha.categoria === categoria && linha.origemCategoria === origem) {
         continue;
       }
@@ -199,6 +210,18 @@ export class CategorizacaoService {
       valorMaxCentavos: r.valorMaxCentavos,
       prioridade: r.prioridade,
       criadoEm: r.criadoEm,
+    }));
+  }
+
+  /** Fontes de renda ativas do usuário (spec 07): entram na categorização entre a regra e o padrão. */
+  private async carregarFontes(userId: string): Promise<FonteAplicavel[]> {
+    const fontes = await this.prisma.fonteRenda.findMany({ where: { userId, ativa: true } });
+    return fontes.map((f) => ({
+      tipo: f.tipo,
+      chave: f.contraparteChave,
+      vigenteDesde: f.vigenteDesde,
+      vigenteAte: f.vigenteAte,
+      ativa: f.ativa,
     }));
   }
 

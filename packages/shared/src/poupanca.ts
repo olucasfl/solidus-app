@@ -1,11 +1,13 @@
 import type { CategoriaId, NaturezaCategoria } from './categoria';
 
 /** Contrato da taxa de poupança (spec 04-taxa-de-poupanca). Dinheiro em centavos inteiros. */
-export type AvisoPoupanca =
-  'SEM_TRANSACOES' | 'SEM_RECEITA' | 'ENTRADAS_A_CLASSIFICAR' | 'PIX_ENTRE_PESSOAS_FORA_DA_CONTA';
+export type AvisoPoupanca = 'SEM_TRANSACOES' | 'SEM_RECEITA' | 'ENTRADAS_A_CLASSIFICAR';
+
+/** Categoria que só existe no cálculo da poupança (spec 07): o líquido dos Pix entre pessoas. */
+export const PIX_ENTRE_PESSOAS_LIQUIDO = 'PIX_ENTRE_PESSOAS_LIQUIDO';
 
 export interface PoupancaCategoria {
-  categoria: CategoriaId | 'SEM_CATEGORIA';
+  categoria: CategoriaId | 'SEM_CATEGORIA' | typeof PIX_ENTRE_PESSOAS_LIQUIDO;
   natureza: NaturezaCategoria;
   quantidade: number;
   /** Assinado, como gravado: saída negativa, entrada positiva. */
@@ -24,10 +26,17 @@ export interface PoupancaMes {
   neutras: { quantidade: number };
   indefinidas: { quantidade: number; entradasCentavos: number; saidasCentavos: number };
   /**
-   * Pix/transferências de e para pessoas: fora da conta por padrão (nem renda nem despesa), mas
-   * nunca escondidos. Para contá-los, o usuário cria uma regra de categoria (aluguel, cliente...).
+   * Pix de e para pessoas que não são renda (spec 07): contam pelo LÍQUIDO do mês (saídas − entradas).
+   * Saiu mais do que entrou → a diferença é despesa; entrou mais → abate despesa (reembolso), até o
+   * limite das despesas, e nunca vira receita. `abatimentoCentavos` é quanto foi realmente abatido.
    */
-  pixPessoas: { quantidade: number; entradasCentavos: number; saidasCentavos: number };
+  pixPessoas: {
+    quantidade: number;
+    entradasCentavos: number;
+    saidasCentavos: number;
+    liquidoCentavos: number;
+    abatimentoCentavos: number;
+  };
   porCategoria: PoupancaCategoria[];
   avisos: AvisoPoupanca[];
 }

@@ -84,3 +84,58 @@ describe('mapearConta', () => {
     );
   });
 });
+
+describe('mapearTransacao — contraparte (spec 07)', () => {
+  const SEGREDO = 's'.repeat(32);
+  const pix = (parcial: Partial<TransacaoPluggy>) =>
+    tx({
+      description: 'Transferência Recebida|MARIA TESTE',
+      paymentData: {
+        payer: { name: 'Maria Teste', documentNumber: { value: '123.456.789-09' } },
+        receiver: { name: 'Eu Mesmo', documentNumber: { value: '987.654.321-00' } },
+      },
+      ...parcial,
+    });
+
+  it('entrada usa o PAGADOR como contraparte', () => {
+    const r = mapearTransacao(pix({ type: 'CREDIT', amount: 100 }), SEGREDO);
+    expect(r.contraparteChave).toMatch(/^[0-9a-f]{64}$/);
+    expect(r.contraparteNome).toBe('Maria Teste');
+    expect(r.contraparteDocMascarado).toBe('***.456.789-**');
+  });
+
+  it('saída usa o RECEBEDOR como contraparte (chave diferente da do pagador)', () => {
+    const entrada = mapearTransacao(pix({ type: 'CREDIT', amount: 100 }), SEGREDO);
+    const saida = mapearTransacao(pix({ type: 'DEBIT', amount: -100 }), SEGREDO);
+    expect(saida.contraparteDocMascarado).toBe('***.654.321-**');
+    expect(saida.contraparteChave).not.toBe(entrada.contraparteChave);
+  });
+
+  it('a mesma pessoa gera a mesma chave em transações diferentes', () => {
+    const a = mapearTransacao(pix({ id: 'a', type: 'CREDIT', amount: 10 }), SEGREDO);
+    const b = mapearTransacao(pix({ id: 'b', type: 'CREDIT', amount: 99 }), SEGREDO);
+    expect(a.contraparteChave).toBe(b.contraparteChave);
+  });
+
+  it('o documento em claro não aparece em nenhum campo mapeado', () => {
+    const r = mapearTransacao(pix({ type: 'CREDIT', amount: 100 }), SEGREDO);
+    expect(JSON.stringify(r)).not.toContain('12345678909');
+    expect(JSON.stringify(r)).not.toContain('123.456.789-09');
+  });
+
+  it('sem paymentData (cartão, tarifa) ou sem segredo → contraparte nula', () => {
+    const semDados = mapearTransacao(tx({ type: 'DEBIT', amount: -10 }), SEGREDO);
+    expect(semDados.contraparteChave).toBeNull();
+    expect(semDados.contraparteNome).toBeNull();
+    expect(semDados.contraparteDocMascarado).toBeNull();
+    expect(mapearTransacao(pix({ type: 'CREDIT', amount: 100 })).contraparteChave).toBeNull();
+  });
+
+  it('Pix sem documento válido não tem contraparte (só nome não identifica)', () => {
+    const r = mapearTransacao(
+      pix({ type: 'CREDIT', amount: 100, paymentData: { payer: { name: 'Maria Teste' } } }),
+      SEGREDO,
+    );
+    expect(r.contraparteChave).toBeNull();
+  });
+});

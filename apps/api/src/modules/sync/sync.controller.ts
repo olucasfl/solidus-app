@@ -1,8 +1,9 @@
 import type { SyncResponse, SyncStatusResponse } from '@solidus/shared';
-import { Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
 import { UserId } from '../../common/decorators/user-id.decorator';
+import { SincronizarQuery } from './dto/sincronizar.dto';
 import { SYNC_THROTTLE_LIMIT, SYNC_THROTTLE_TTL_MS } from './sync.constants';
 import { SyncService } from './sync.service';
 import { SyncTokenGuard } from './sync-token.guard';
@@ -18,8 +19,8 @@ export class SyncController {
   @Throttle({ default: { limit: SYNC_THROTTLE_LIMIT, ttl: SYNC_THROTTLE_TTL_MS } })
   @Post()
   @HttpCode(HttpStatus.OK)
-  sincronizar(): Promise<SyncResponse> {
-    return this.syncService.sincronizar();
+  sincronizar(@Query() query: SincronizarQuery): Promise<SyncResponse> {
+    return this.syncService.sincronizar({ completo: query.completo === 'true' });
   }
 
   @Get('status')

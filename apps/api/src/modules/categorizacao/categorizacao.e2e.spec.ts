@@ -22,6 +22,7 @@ describe('categorização e transações (e2e)', () => {
   let moduleRef: TestingModule;
   let auth: string;
   const prisma = {
+    fonteRenda: { findMany: jest.fn().mockResolvedValue([]) },
     regraCategoria: {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn(),

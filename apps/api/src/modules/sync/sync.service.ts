@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { type EnvironmentVariables } from '../../config/env.validation';
 import { PrismaService } from '../../database/prisma.service';
 import { CategorizacaoService } from '../categorizacao/categorizacao.service';
+import { RendaService } from '../renda/renda.service';
 import { mapearConta, mapearTransacao, type TransacaoMapeada } from '../../domain/sync/mapear';
 import { SYNC_JANELA_SOBREPOSICAO_DIAS } from './sync.constants';
 import { PluggyGateway } from './pluggy.gateway';
@@ -29,6 +30,14 @@ interface TransacaoGravada {
   valorCentavos: number;
   status: string;
   categoriaPluggy: string | null;
+  contraparteChave?: string | null;
+  contraparteNome?: string | null;
+  contraparteDocMascarado?: string | null;
+}
+
+/** `completo` ignora a janela recente e busca TODO o histórico (backfill da contraparte, spec 07). */
+export interface OpcoesSync {
+  completo?: boolean;
 }
 
 function dataIso(data: Date): string {
@@ -46,9 +55,10 @@ export class SyncService {
     private readonly gateway: PluggyGateway,
     private readonly config: ConfigService<EnvironmentVariables, true>,
     private readonly categorizacao: CategorizacaoService,
+    private readonly renda: RendaService,
   ) {}
 
-  async sincronizar(): Promise<SyncResponse> {
+  async sincronizar(opcoes: OpcoesSync = {}): Promise<SyncResponse> {
     const itemId = this.config.get('PLUGGY_ITEM_ID', { infer: true });
     if (!itemId) {
       throw new PluggyNaoConfiguradoError();
@@ -58,13 +68,17 @@ export class SyncService {
     }
     this.emAndamento = true;
     try {
-      return await this.sincronizarDoDono(itemId, await this.resolverDono());
+      return await this.sincronizarDoDono(itemId, await this.resolverDono(), opcoes);
     } finally {
       this.emAndamento = false;
     }
   }
 
-  private async sincronizarDoDono(itemId: string, donoId: string): Promise<SyncResponse> {
+  private async sincronizarDoDono(
+    itemId: string,
+    donoId: string,
+    opcoes: OpcoesSync,
+  ): Promise<SyncResponse> {
     const iniciadoEm = new Date();
     const contadores: Contadores = {
       contas: 0,
@@ -74,8 +88,8 @@ export class SyncService {
     };
 
     try {
-      await this.executar(donoId, itemId, contadores);
-      await this.categorizarSemDerrubar(donoId);
+      await this.executar(donoId, itemId, contadores, opcoes.completo === true);
+      await this.categorizarSemDerrubar(donoId, opcoes.completo === true);
       await this.registrar(donoId, iniciadoEm, 'SUCESSO', contadores);
       return { ...contadores, duracaoMs: Date.now() - iniciadoEm.getTime() };
     } catch (error) {
@@ -86,10 +100,19 @@ export class SyncService {
     }
   }
 
-  /** Os dados do Pluggy já estão gravados: falhar ao categorizar não pode derrubar o sync (spec 03). */
-  private async categorizarSemDerrubar(donoId: string): Promise<void> {
+  /**
+   * Os dados do Pluggy já estão gravados: falhar ao categorizar não pode derrubar o sync (spec 03).
+   * Fonte de renda nova (reconhecida agora) ou histórico reprocessado muda a categoria de transações
+   * JÁ categorizadas, então nesses casos reaplica tudo (`recalcular`); senão, só as pendentes.
+   */
+  private async categorizarSemDerrubar(donoId: string, completo: boolean): Promise<void> {
     try {
-      await this.categorizacao.categorizarPendentes(donoId);
+      const novasFontes = await this.renda.reconhecerRecorrentes(donoId);
+      if (completo || novasFontes > 0) {
+        await this.categorizacao.recalcular(donoId);
+      } else {
+        await this.categorizacao.categorizarPendentes(donoId);
+      }
     } catch (error) {
       this.logger.error(`Falha ao categorizar (${error instanceof Error ? error.name : 'erro'})`);
     }
@@ -131,8 +154,14 @@ export class SyncService {
     };
   }
 
-  private async executar(donoId: string, itemId: string, contadores: Contadores): Promise<void> {
-    const dateFrom = await this.inicioDaJanela(donoId);
+  private async executar(
+    donoId: string,
+    itemId: string,
+    contadores: Contadores,
+    completo: boolean,
+  ): Promise<void> {
+    const dateFrom = completo ? undefined : await this.inicioDaJanela(donoId);
+    const segredo = this.config.get('CONTRAPARTE_HMAC_SECRET', { infer: true });
     const contasPluggy = await this.gateway.listarContas(itemId);
 
     for (const contaPluggy of contasPluggy) {
@@ -160,8 +189,8 @@ export class SyncService {
       });
       contadores.contas += 1;
 
-      const transacoes = (await this.gateway.listarTransacoes(contaPluggy.id, dateFrom)).map(
-        mapearTransacao,
+      const transacoes = (await this.gateway.listarTransacoes(contaPluggy.id, dateFrom)).map((t) =>
+        mapearTransacao(t, segredo),
       );
       contadores.semConversao += transacoes.filter((t) => t.semConversao).length;
       await this.gravarTransacoes(donoId, conta.id, transacoes, contadores);
@@ -230,6 +259,9 @@ export class SyncService {
       atual.status !== novo.status ||
       atual.descricao !== novo.descricao ||
       atual.categoriaPluggy !== novo.categoriaPluggy ||
+      (atual.contraparteChave ?? null) !== novo.contraparteChave ||
+      (atual.contraparteNome ?? null) !== novo.contraparteNome ||
+      (atual.contraparteDocMascarado ?? null) !== novo.contraparteDocMascarado ||
       atual.data.getTime() !== novo.data.getTime()
     );
   }
@@ -246,6 +278,9 @@ export class SyncService {
       status: t.status,
       moeda: t.moeda,
       categoriaPluggy: t.categoriaPluggy,
+      contraparteChave: t.contraparteChave,
+      contraparteNome: t.contraparteNome,
+      contraparteDocMascarado: t.contraparteDocMascarado,
     };
   }
 

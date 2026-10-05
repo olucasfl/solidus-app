@@ -1,7 +1,7 @@
 import type { CategoriaId } from './categoria';
 
 /** Contrato de categorização e listagem de transações (spec 03-categorizacao). */
-export type OrigemCategoria = 'REGRA_USUARIO' | 'REGRA_PADRAO' | 'MANUAL';
+export type OrigemCategoria = 'REGRA_USUARIO' | 'REGRA_PADRAO' | 'MANUAL' | 'FONTE_RENDA';
 export type TipoTransacao = 'DEBITO' | 'CREDITO';
 
 export interface RegraCategoria {
@@ -60,6 +60,8 @@ export interface TransacaoResumo {
   moeda: string;
   categoria: CategoriaId | null;
   origemCategoria: OrigemCategoria | null;
+  /** De quem veio (entrada) ou para quem foi (saída). Nunca a chave do documento. */
+  contraparte: { nome: string | null; docMascarado: string | null } | null;
 }
 
 export interface ListaTransacoesResponse {

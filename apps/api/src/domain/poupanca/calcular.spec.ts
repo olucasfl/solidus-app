@@ -74,7 +74,7 @@ describe('calcularPoupanca', () => {
     });
   });
 
-  it('CA-04b: Pix de e para pessoas ficam fora da conta, mas são reportados e geram aviso', () => {
+  it('CA-04b (spec 07): entrou mais Pix do que saiu → o excedente ABATE despesa, nunca vira receita', () => {
     const r = calcularPoupanca('2026-09', [
       g('SALARIO', 100_000),
       g('MERCADO', -30_000),
@@ -82,26 +82,72 @@ describe('calcularPoupanca', () => {
       g('PIX_ENVIADO_PARA_PESSOAS', -45_000, 4, 'DEBITO'),
     ]);
 
+    // líquido = 45.000 − 80.000 = −35.000; só 30.000 de despesa existem para abater.
     expect(r.receitasCentavos).toBe(100_000);
-    expect(r.despesasCentavos).toBe(30_000);
+    expect(r.despesasCentavos).toBe(0);
     expect(r.pixPessoas).toEqual({
       quantidade: 7,
       entradasCentavos: 80_000,
       saidasCentavos: 45_000,
+      liquidoCentavos: -35_000,
+      abatimentoCentavos: 30_000,
     });
-    expect(r.avisos).toContain('PIX_ENTRE_PESSOAS_FORA_DA_CONTA');
     expect(r.avisos).not.toContain('ENTRADAS_A_CLASSIFICAR');
     expect(r.neutras.quantidade).toBe(7);
   });
 
-  it('CA-04b: sem Pix entre pessoas não há aviso; categoria antiga desconhecida é indefinida', () => {
+  it('CA-04c (spec 07): saiu mais Pix do que entrou → a diferença conta como despesa', () => {
+    const r = calcularPoupanca('2026-09', [
+      g('SALARIO', 100_000),
+      g('MERCADO', -30_000),
+      g('PIX_RECEBIDO_DE_PESSOAS', 20_000, 2, 'CREDITO'),
+      g('PIX_ENVIADO_PARA_PESSOAS', -50_000, 3, 'DEBITO'),
+    ]);
+
+    expect(r.receitasCentavos).toBe(100_000);
+    expect(r.despesasCentavos).toBe(60_000);
+    expect(r.pixPessoas).toMatchObject({ liquidoCentavos: 30_000, abatimentoCentavos: 0 });
+    expect(r.porCategoria.find((c) => c.categoria === 'PIX_ENTRE_PESSOAS_LIQUIDO')).toEqual({
+      categoria: 'PIX_ENTRE_PESSOAS_LIQUIDO',
+      natureza: 'DESPESA',
+      quantidade: 0,
+      totalCentavos: -30_000,
+    });
+    expect(r.taxaBasisPoints).toBe(4000);
+  });
+
+  it('CA-04d (spec 07): abatimento nunca deixa a despesa negativa e o Pix sozinho nunca vira receita', () => {
+    const r = calcularPoupanca('2026-09', [
+      g('SALARIO', 100_000),
+      g('PIX_RECEBIDO_DE_PESSOAS', 900_000, 5, 'CREDITO'),
+    ]);
+
+    expect(r.despesasCentavos).toBe(0);
+    expect(r.receitasCentavos).toBe(100_000);
+    expect(r.pixPessoas).toMatchObject({ liquidoCentavos: -900_000, abatimentoCentavos: 0 });
+    expect(r.porCategoria.some((c) => c.categoria === 'PIX_ENTRE_PESSOAS_LIQUIDO')).toBe(false);
+  });
+
+  it('CA-04e: Pix que entra e sai no mesmo valor se anula (líquido 0)', () => {
+    const r = calcularPoupanca('2026-09', [
+      g('SALARIO', 100_000),
+      g('MERCADO', -30_000),
+      g('PIX_RECEBIDO_DE_PESSOAS', 25_000, 1, 'CREDITO'),
+      g('PIX_ENVIADO_PARA_PESSOAS', -25_000, 1, 'DEBITO'),
+    ]);
+
+    expect(r.despesasCentavos).toBe(30_000);
+    expect(r.pixPessoas).toMatchObject({ liquidoCentavos: 0, abatimentoCentavos: 0 });
+  });
+
+  it('CA-04f: sem Pix entre pessoas o líquido é 0; categoria antiga desconhecida é indefinida', () => {
     const r = calcularPoupanca('2026-09', [
       g('SALARIO', 100_000),
       g('TRANSFERENCIAS_ENVIADAS' as never, -9_000, 2, 'DEBITO'),
     ]);
 
     expect(r.pixPessoas.quantidade).toBe(0);
-    expect(r.avisos).not.toContain('PIX_ENTRE_PESSOAS_FORA_DA_CONTA');
+    expect(r.pixPessoas.liquidoCentavos).toBe(0);
     expect(r.indefinidas).toMatchObject({ quantidade: 2, saidasCentavos: 9_000 });
   });
 
@@ -136,7 +182,13 @@ describe('calcularPoupanca', () => {
       transacoes: 0,
       neutras: { quantidade: 0 },
       indefinidas: { quantidade: 0, entradasCentavos: 0, saidasCentavos: 0 },
-      pixPessoas: { quantidade: 0, entradasCentavos: 0, saidasCentavos: 0 },
+      pixPessoas: {
+        quantidade: 0,
+        entradasCentavos: 0,
+        saidasCentavos: 0,
+        liquidoCentavos: 0,
+        abatimentoCentavos: 0,
+      },
       porCategoria: [],
       avisos: ['SEM_TRANSACOES', 'SEM_RECEITA'],
     });

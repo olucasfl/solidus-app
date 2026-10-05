@@ -6,6 +6,7 @@ const U = 'u1';
 
 function montar() {
   const prisma = {
+    fonteRenda: { findMany: jest.fn().mockResolvedValue([]) },
     regraCategoria: {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn(),

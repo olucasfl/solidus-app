@@ -4,14 +4,15 @@ Mapa único de `spec ↔ status`. **Este arquivo é a fonte da verdade sobre o q
 confie em adivinhar nome de arquivo. Quem cria ou fecha uma spec atualiza esta tabela no mesmo
 commit — `/docs-sync` confere se ela bate com a realidade.
 
-| Feature                  | Spec                                                 | Status                               |
-| ------------------------ | ---------------------------------------------------- | ------------------------------------ |
-| Fundação e autenticação  | [01-fundacao-auth.md](01-fundacao-auth.md)           | ✅ implementada                      |
-| Sync com o Pluggy        | [02-sync-pluggy.md](02-sync-pluggy.md)               | ✅ implementada                      |
-| Categorização por regras | [03-categorizacao.md](03-categorizacao.md)           | ✅ implementada                      |
-| Taxa de poupança         | [04-taxa-de-poupanca.md](04-taxa-de-poupanca.md)     | ✅ implementada                      |
-| Carteira por Caixinha    | [05-carteira-caixinhas.md](05-carteira-caixinhas.md) | 🚧 em andamento                      |
-| Multiusuário             | [06-multiusuario.md](06-multiusuario.md)             | 🚧 etapa 1 feita; 2–5 aguardam "sim" |
+| Feature                   | Spec                                                             | Status                    |
+| ------------------------- | ---------------------------------------------------------------- | ------------------------- |
+| Fundação e autenticação   | [01-fundacao-auth.md](01-fundacao-auth.md)                       | ✅ implementada           |
+| Sync com o Pluggy         | [02-sync-pluggy.md](02-sync-pluggy.md)                           | ✅ implementada           |
+| Categorização por regras  | [03-categorizacao.md](03-categorizacao.md)                       | ✅ implementada           |
+| Taxa de poupança          | [04-taxa-de-poupanca.md](04-taxa-de-poupanca.md)                 | ✅ implementada           |
+| Carteira por Caixinha     | [05-carteira-caixinhas.md](05-carteira-caixinhas.md)             | 🚧 em andamento           |
+| Multiusuário              | [06-multiusuario.md](06-multiusuario.md)                         | 🗑️ obsoleta (uso pessoal) |
+| Salário e Pix automáticos | [07-salario-e-pix-automatico.md](07-salario-e-pix-automatico.md) | 🚧 em andamento           |
 
 ## Legenda de status
 
@@ -60,10 +61,8 @@ anterior:
       são ~R$ 2 a 8 mil por mês, mais que o salário. O sistema não sabe se é renda, reembolso ou dinheiro
       seu movimentado, então a taxa de poupança continua negativa/duvidosa até você decidir.
       `GET /transacoes?categoria=A_CLASSIFICAR`, depois `POST /regras` ou `PATCH /transacoes/:id/categoria`.
-- [ ] **Multiusuário (decisão do humano em 2026-10-05: o app é para outras pessoas também):** regras
-      alteradas com seu "sim" e isolamento por usuário feito (etapa 1). Para abrir o cadastro público faltam
-      dois "sim": provedor de e-mail (`RULES.md` §12) e `userId` obrigatório (`RULES.md` §6) — ver
-      `06-multiusuario.md`.
+- [x] **Multiusuário cancelado (2026-10-05):** o app fica só para o dono, com login obrigatório e sem
+      cadastro público. O isolamento por `userId` já feito permanece como defesa em profundidade.
 - [ ] **Para o front-end (quando existir):** criar as Caixinhas e informar os saldos; classificar os Pix de
       pessoas que contam como renda/despesa (regras). O CDI se atualiza sozinho e o app se confere com os
       saldos informados (`GET /caixinhas/:id/conferencia`); alíquotas de IR/IOF foram verificadas em

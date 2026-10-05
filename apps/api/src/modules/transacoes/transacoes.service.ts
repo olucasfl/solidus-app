@@ -60,6 +60,11 @@ export class TransacoesService {
         moeda: t.moeda,
         categoria: t.categoria as CategoriaId | null,
         origemCategoria: t.origemCategoria as OrigemCategoria | null,
+        // Nome e máscara servem para a pessoa reconhecer a origem; a chave (hash) nunca sai da API.
+        contraparte:
+          t.contraparteNome || t.contraparteDocMascarado
+            ? { nome: t.contraparteNome, docMascarado: t.contraparteDocMascarado }
+            : null,
       })),
     };
   }

@@ -7,7 +7,7 @@ visão/decisões de produto; aqui é só o "como o código está organizado".
 ## 1. Estado atual (vale mais que qualquer resumo — confira a data do último commit)
 
 **Existe:** monorepo pnpm, ESLint 9 (flat) + Prettier + Husky + lint-staged + commitlint,
-`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes`, `poupanca` e `carteira` (Caixinhas, rendimento bruto/líquido); `auth` — usuário único via seed, login, refresh rotativo,
+`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes`, `poupanca`, `renda` (salário e fontes de renda) e `carteira` (Caixinhas, rendimento bruto/líquido); `auth` — usuário único via seed, login, refresh rotativo,
 logout, `me`; guard global validando o access token de verdade; `ValidationPipe` global, filtro de
 exceção, helmet, CORS, throttler básico com limite próprio no login), `packages/shared` (tipos
 `Centavos`/`CategoriaId`/contrato de auth), Prisma com os models `User`/`RefreshSession` (spec
@@ -111,8 +111,8 @@ com cálculo vai em `domain/`, não no service do módulo.
 
 ### 4.5 `auth` (spec `01-fundacao-auth`)
 
-Hoje só existe o usuário do seed (o cadastro público é permitido pela spec 06, mas ainda não foi
-implementado: não há `POST /auth/registro`). Todo dado é do usuário da sessão: `@UserId()` entrega o `sub`
+Só existe o usuário do seed e **não haverá cadastro público** (o app é de uso pessoal, spec 06
+obsoleta; não há `POST /auth/registro`). Todo dado é do usuário da sessão: `@UserId()` entrega o `sub`
 do access token, os services o põem em todo `where`/`data` (`isolamento.spec.ts` varre o código), recurso
 alheio dá 404. `User.papel = ADMIN` libera `PUT /impostos` via `AdminGuard`. `POST /auth/login` (`@Public()`) aceita `{ email, senha, cliente?: 'web' | 'pwa' }` e
 devolve `{ accessToken, usuario }` + cookie `solidus_refresh` (`httpOnly`, `Secure` só em
@@ -150,6 +150,14 @@ sync incremental com janela = data mais recente − 30 dias; só atualiza transa
 execução por vez (409 `SYNC_EM_ANDAMENTO`). Toda execução grava um `SyncRun` (só o `code` do erro,
 nunca a mensagem do Pluggy). `GET /sync/status` (usuário) devolve o último `SyncRun`.
 
+**Contraparte (spec 07):** cada transação grava quem pagou (entrada, `paymentData.payer`) ou quem recebeu
+(saída, `paymentData.receiver`). O CPF/CNPJ **nunca é gravado em claro**: só `HMAC-SHA256(documento,
+`CONTRAPARTE_HMAC_SECRET`)` (`contraparteChave`, chave de comparação), uma máscara (`***.456.789-**`) e o nome
+(o do Pluggy ou, em melhor esforço, o que vem depois do `|` na descrição do Pix). Tudo isso mora em
+`domain/contraparte/documento.ts`, o único arquivo que toca o documento. Sem documento válido não há
+contraparte. **`POST /sync?completo=true`** ignora a janela de 30 dias e reprocessa todo o histórico (backfill
+da contraparte nas transações antigas) e reaplica a categorização em tudo.
+
 **Dinheiro:** centavos inteiros via `domain/money/centavos.ts#reaisParaCentavos`; o mapeamento
 Pluggy → modelo vive em `domain/sync/mapear.ts` (puro). **O sinal vem do `type`, não do valor
 cru**: no Pluggy a conta corrente manda `DEBIT` negativo, mas o cartão manda a compra (`DEBIT`)
@@ -162,7 +170,7 @@ A taxonomia é **fechada e vive em `packages/shared/src/categoria.ts`** (23 cate
 `natureza`: RECEITA, DESPESA, NEUTRA ou INDEFINIDA — é isso que a taxa de poupança usa). A
 categorização é regra pura em `domain/categorizacao/` (substring sem acento/caixa, **nunca regex**).
 Precedência: manual > regra do usuário (`RegraCategoria`, prioridade desc, empate = mais antiga) >
-regra padrão > fallback (débito → `OUTRAS_DESPESAS`, crédito → `A_CLASSIFICAR`).
+**fonte de renda (spec 07, §4.10)** > regra padrão > fallback (débito → `OUTRAS_DESPESAS`, crédito → `A_CLASSIFICAR`).
 
 **Regras por descrição vêm antes do mapa de categorias do Pluggy**, porque o Pluggy classifica o
 "Pagamento de fatura" da conta corrente como `Transfers` (contaria a fatura duas vezes como
@@ -170,15 +178,16 @@ despesa). Pix/transferência de e para pessoas (`Transfers` do Pluggy) tem categ
 (`PIX_RECEBIDO_DE_PESSOAS` / `PIX_ENVIADO_PARA_PESSOAS`), **neutra por padrão** e sempre reportada à
 parte pela taxa de poupança: o app é global, então não presume que Pix recebido é renda nem que Pix
 enviado é gasto (aluguel, cliente, reembolso... só o usuário sabe) — ele cria uma regra para contá-lo.
-Entrada de conta própria e o que o sistema não entende continuam `A_CLASSIFICAR`: não adivinha receita.
+Transferência entre contas próprias (`Same person transfer`) é `TRANSFERENCIA_INTERNA` (neutra) nos dois
+sentidos desde a spec 07; o que o sistema não entende continua `A_CLASSIFICAR`: não adivinha receita.
 
 **Nada que dependa de valor ou de nome está fixo no código.** O que define "isso é salário" é regra
 do usuário (`RegraCategoria`), com faixa de valor opcional e editável por `PATCH /regras/:id` (salário
-mudou → ajusta a regra). Entrada de conta própria é `A_CLASSIFICAR`, não neutra: o salário do usuário
-chega assim e o sistema não presume.
+mudou → ajusta a regra). O jeito preferido de dizer "isso é salário" é a **fonte de renda** (§4.10): o
+usuário aponta uma transação e a origem inteira passa a valer.
 
 Persistência: `Transacao.categoria` (String validada contra a taxonomia) + `origemCategoria`
-(`REGRA_USUARIO`, `REGRA_PADRAO`, `MANUAL`). Transações novas são categorizadas ao fim de cada sync
+(`REGRA_USUARIO`, `REGRA_PADRAO`, `MANUAL`, `FONTE_RENDA`). Transações novas são categorizadas ao fim de cada sync
 (falha aí é logada e não derruba o sync); `POST /categorizacao/recalcular` reaplica as regras em
 tudo que não é manual (criar/apagar regra não recalcula sozinho). Rotas, todas autenticadas:
 `GET /categorias`, `GET/POST /regras`, `DELETE /regras/:id`, `POST /categorizacao/recalcular`,
@@ -193,9 +202,12 @@ receitas`, em pontos-base inteiros (sem float no contrato); só categorias de na
 DESPESA entram — NEUTRA (fatura, aporte, transferência própria) fica fora, estorno reduz a despesa.
 **INDEFINIDA e sem categoria são reportadas à parte (`indefinidas`) e geram aviso
 `ENTRADAS_A_CLASSIFICAR`; receita zero devolve taxa `null` + `SEM_RECEITA`** — o número nunca é
-apresentado como confiável quando não é. **Pix de e para pessoas** (neutros) saem em `pixPessoas`
-(quantidade, entradas, saídas) com o aviso `PIX_ENTRE_PESSOAS_FORA_DA_CONTA`: ficam fora da conta, mas
-nunca escondidos.
+apresentado como confiável quando não é. **Pix de e para pessoas** que não são renda contam pelo
+**líquido do mês** (spec 07, `aplicarPixLiquido` em `calcular.ts`): `saídas − entradas`. Saiu mais →
+a diferença é despesa (linha virtual `PIX_ENTRE_PESSOAS_LIQUIDO` em `porCategoria`, fora da taxonomia, com
+`quantidade` 0 porque as transações já foram contadas). Entrou mais → o excedente **abate despesa** (reembolso),
+até o limite das despesas, e **nunca vira receita**. `pixPessoas` leva `liquidoCentavos` e
+`abatimentoCentavos`; o aviso `PIX_ENTRE_PESSOAS_FORA_DA_CONTA` deixou de existir.
 
 ### 4.9 `carteira` (spec `05-carteira-caixinhas`)
 
@@ -236,13 +248,37 @@ diretamente). **Não existe feed oficial legível por máquina de alíquotas**: 
 O que muda todo dia — o CDI — é automático. O Pluggy não diz de qual Caixinha é cada "Aplicação/Resgate
 RDB", então o sync só **sugere** (`GET /movimentos/sugestoes`) e o usuário vincula.
 
+### 4.10 `renda` (spec `07-salario-e-pix-automatico`)
+
+Uma **fonte de renda** (`FonteRenda`) é uma origem (a `contraparteChave`) que paga renda: `SALARIO` (o
+usuário apontou uma transação: `POST /salario/fonte`) ou `RECORRENTE` (o Solidus reconheceu: a origem pagou
+em 3+ **meses distintos**, só entre Pix de pessoas). Vale por **dia (UTC)** entre `vigenteDesde` e
+`vigenteAte`; entrada da origem nesse intervalo vira `SALARIO` (ou `OUTRAS_RECEITAS`, na recorrente) com
+origem `FONTE_RENDA`. A regra pura vive em `domain/renda/` (`aplicar-fontes.ts`, `detectar-recorrentes.ts`);
+`categorizar()` a consulta entre a regra do usuário e o padrão (a exceção do usuário vence a automação).
+
+**Trocar de onde vem** (`PATCH /salario/fontes/:id/trocar`): encerra só a fonte escolhida no dia anterior à
+transação e abre a nova nesse dia, numa `$transaction`; o passado da origem antiga continua dela. Pode haver
+mais de uma fonte de salário vigente ao mesmo tempo (`409 FONTE_JA_EXISTE` só para a mesma origem).
+Uma fonte recorrente que o usuário **desativou** (`PATCH /renda/fontes/:id`) nunca é recriada pelo
+reconhecimento automático. Toda mudança chama `CategorizacaoService.recalcular`, que respeita a categoria
+manual.
+
+Rotas (todas autenticadas, dono = usuário da sessão; recurso alheio = 404): `GET /salario` (fontes vigentes,
+valor atual = soma do último recebimento de cada fonte vigente, histórico, todas as fontes), `POST
+/salario/fonte`, `PATCH /salario/fontes/:id/trocar`, `GET /renda/fontes`, `PATCH /renda/fontes/:id`. **Os
+DTOs nunca levam a chave do documento**, só nome e máscara; `GET /transacoes` ganhou `contraparte {nome,
+docMascarado}` para a pessoa reconhecer a origem. Erros 422 usam `code` estável (`NAO_E_ENTRADA`,
+`SEM_CONTRAPARTE`, `FONTE_NAO_VIGENTE`, `MESMA_ORIGEM`, `DATA_ANTERIOR_AO_INICIO`).
+
 ## 5. Prisma e RLS
 
 - **Modelos hoje** (`schema.prisma`): `User` (usuário único, criado pelo seed) e `RefreshSession`
   (uma por login/dispositivo; `cliente: WEB | PWA` decide a TTL do refresh — spec
   `01-fundacao-auth`, `ARCHITECTURE.md` §4.5). `Conta`, `Transacao` e `SyncRun` (spec `02-sync-pluggy`, valores sempre em centavos `Int`),
   `RegraCategoria` (spec 03) e `Caixinha`, `MovimentoCaixinha`, `CdiDia` (CDI × 10⁸) e `FaixaImposto`
-  (spec 05). A taxa de poupança (spec 04) não tem tabela própria: lê `Transacao`.
+  (spec 05), e `FonteRenda` (spec 07; `Transacao` ganhou `contraparteChave`/`Nome`/`DocMascarado`). A taxa de
+  poupança (spec 04) não tem tabela própria: lê `Transacao`.
 - `schema.prisma`: `datasource db` usa `DATABASE_URL` (pooler de transação, runtime) e
   `directUrl` com `DIRECT_URL` (pooler de sessão, só para `migrate`). O Prisma conecta como role
   `postgres` — RLS não afeta as queries da API; existe para fechar a Data API do Supabase (não
@@ -275,6 +311,11 @@ precisar do mesmo shape que `apps/api` expõe.
 Validadas no boot por `apps/api/src/config/env.validation.ts` — falha rápido, mensagem lista só o
 nome da variável com problema, nunca o valor. Lista completa (com comentário do propósito de cada
 uma) em `.env.example`, na raiz.
+
+**`CONTRAPARTE_HMAC_SECRET`** (obrigatória, 32+ caracteres): segredo do HMAC que transforma o documento da
+contraparte em chave de comparação (spec 07). Gerada uma vez, como os `JWT_*_SECRET`; **trocá-la invalida todas
+as chaves já gravadas** (as fontes de renda deixam de casar e o backfill `POST /sync?completo=true` precisa
+rodar de novo).
 
 **`TRUST_PROXY_HOPS`** (opcional, 0–10, ausente = 0): quantos proxies confiáveis existem entre o cliente e
 a API. Em dev fica ausente. No deploy (Render etc.) o `req.ip` seria o do proxy e o limite por IP

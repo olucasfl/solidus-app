@@ -1,3 +1,4 @@
+import { mapearContraparte, type ParticipantePluggy } from '../contraparte/documento';
 import { reaisParaCentavos } from '../money/centavos';
 
 /** Formas mínimas do que o Pluggy devolve — o domínio não importa o SDK. */
@@ -20,6 +21,8 @@ export interface TransacaoPluggy {
   currencyCode: string;
   category: string | null;
   status?: string;
+  /** Só o que o Solidus usa (spec 07): quem pagou e quem recebeu. */
+  paymentData?: { payer?: ParticipantePluggy | null; receiver?: ParticipantePluggy | null } | null;
 }
 
 export type TipoConta = 'CORRENTE' | 'POUPANCA' | 'CARTAO';
@@ -41,6 +44,10 @@ export interface TransacaoMapeada {
   status: 'PENDENTE' | 'EFETIVADA';
   moeda: string;
   categoriaPluggy: string | null;
+  /** Spec 07. Chave = HMAC do documento (nunca o documento); nulos sem documento válido. */
+  contraparteChave: string | null;
+  contraparteNome: string | null;
+  contraparteDocMascarado: string | null;
   /** true quando a moeda não é BRL e o Pluggy não informou o valor convertido. */
   semConversao: boolean;
 }
@@ -74,16 +81,29 @@ function tipoDaConta(conta: ContaPluggy): TipoConta | null {
  * cartão manda a compra (DEBIT) positiva e o pagamento (CREDIT) negativo. DEBIT é sempre saída
  * (negativo) e CREDIT sempre entrada (positivo), em módulo.
  */
-export function mapearTransacao(t: TransacaoPluggy): TransacaoMapeada {
+export function mapearTransacao(t: TransacaoPluggy, segredoContraparte?: string): TransacaoMapeada {
   const estrangeira = t.currencyCode !== MOEDA_BASE;
   const semConversao = estrangeira && t.amountInAccountCurrency == null;
   const reais = estrangeira && !semConversao ? t.amountInAccountCurrency! : t.amount;
   const modulo = Math.abs(reaisParaCentavos(reais));
+  const descricao = t.description.slice(0, 500);
+
+  // Entrada → quem pagou; saída → quem recebeu. Sem segredo configurado não há contraparte.
+  const contraparte = segredoContraparte
+    ? mapearContraparte(
+        t.type === 'CREDIT' ? t.paymentData?.payer : t.paymentData?.receiver,
+        descricao,
+        segredoContraparte,
+      )
+    : null;
 
   return {
     pluggyTransactionId: t.id,
     data: new Date(t.date),
-    descricao: t.description.slice(0, 500),
+    descricao,
+    contraparteChave: contraparte?.chave ?? null,
+    contraparteNome: contraparte?.nome ?? null,
+    contraparteDocMascarado: contraparte?.docMascarado ?? null,
     valorCentavos: t.type === 'DEBIT' ? -modulo : modulo,
     tipo: t.type === 'DEBIT' ? 'DEBITO' : 'CREDITO',
     status: t.status === 'PENDING' ? 'PENDENTE' : 'EFETIVADA',
