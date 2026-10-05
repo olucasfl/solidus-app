@@ -4,13 +4,14 @@ Mapa único de `spec ↔ status`. **Este arquivo é a fonte da verdade sobre o q
 confie em adivinhar nome de arquivo. Quem cria ou fecha uma spec atualiza esta tabela no mesmo
 commit — `/docs-sync` confere se ela bate com a realidade.
 
-| Feature                  | Spec                                                 | Status          |
-| ------------------------ | ---------------------------------------------------- | --------------- |
-| Fundação e autenticação  | [01-fundacao-auth.md](01-fundacao-auth.md)           | ✅ implementada |
-| Sync com o Pluggy        | [02-sync-pluggy.md](02-sync-pluggy.md)               | ✅ implementada |
-| Categorização por regras | [03-categorizacao.md](03-categorizacao.md)           | ✅ implementada |
-| Taxa de poupança         | [04-taxa-de-poupanca.md](04-taxa-de-poupanca.md)     | ✅ implementada |
-| Carteira por Caixinha    | [05-carteira-caixinhas.md](05-carteira-caixinhas.md) | 🚧 em andamento |
+| Feature                  | Spec                                                 | Status                                 |
+| ------------------------ | ---------------------------------------------------- | -------------------------------------- |
+| Fundação e autenticação  | [01-fundacao-auth.md](01-fundacao-auth.md)           | ✅ implementada                        |
+| Sync com o Pluggy        | [02-sync-pluggy.md](02-sync-pluggy.md)               | ✅ implementada                        |
+| Categorização por regras | [03-categorizacao.md](03-categorizacao.md)           | ✅ implementada                        |
+| Taxa de poupança         | [04-taxa-de-poupanca.md](04-taxa-de-poupanca.md)     | ✅ implementada                        |
+| Carteira por Caixinha    | [05-carteira-caixinhas.md](05-carteira-caixinhas.md) | 🚧 em andamento                        |
+| Multiusuário             | [06-multiusuario.md](06-multiusuario.md)             | 📝 rascunho (bloqueada: aguarda "sim") |
 
 ## Legenda de status
 
