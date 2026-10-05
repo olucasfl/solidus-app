@@ -1,6 +1,7 @@
 # Spec: Carteira por Caixinha (saldo manual + rendimento calculado)
 
-> Status: aprovada (2026-10-05) — **autoaprovada pelo agente sob delegação**, depois de o humano
+> Status: em andamento (2026-10-05) — implementada e verificada contra a API e o banco reais, **menos**
+> o que o ambiente não alcança: o CDI ao vivo do BCB e a comparação numérica com o app do Nubank (CA-23). — **autoaprovada pelo agente sob delegação**, depois de o humano
 > responder as 5 questões da v1. Dois pontos continuam sendo dele (ver "Para o humano verificar"):
 > as **alíquotas de IR/IOF** (são dados editáveis, semeados com a tabela legal que o agente conhece)
 > e a **convenção de dia de rendimento** (confirmada comparando com o app do Nubank).
@@ -177,52 +178,52 @@ lotes FIFO, alíquota por idade, impostos. Jest no mesmo commit, inclusive teste
 
 ## Critérios de aceite (testáveis, em BDD)
 
-- [ ] **CA-01** — **Dado** saldo R$ 1.000,00 em D, CDI de D+1 = `55131` (E8) e 100% do CDI, **então** o
+- [x] **CA-01** — **Dado** saldo R$ 1.000,00 em D, CDI de D+1 = `55131` (E8) e 100% do CDI, **então** o
       saldo bruto em D+1 = `100055,131…` centavos → R$ 1.000,55 (truncado); a conta é feita à mão no teste.
-- [ ] **CA-02** — **Dado** sábado/domingo/feriado sem CDI, **então** o saldo não muda nesses dias.
-- [ ] **CA-03** — **Dado** o mesmo saldo e CDI com 115% e 100%, **então** o rendimento de 115% é
+- [x] **CA-02** — **Dado** sábado/domingo/feriado sem CDI, **então** o saldo não muda nesses dias.
+- [x] **CA-03** — **Dado** o mesmo saldo e CDI com 115% e 100%, **então** o rendimento de 115% é
       `115/100` do de 100% (antes do truncamento).
-- [ ] **CA-04** — **Dado** 30 dias de CDI, **então** o resultado é igual ao produtório exato em BigInt
+- [x] **CA-04** — **Dado** 30 dias de CDI, **então** o resultado é igual ao produtório exato em BigInt
       (sem arredondar por dia) e difere do cálculo com arredondamento diário quando este diverge.
-- [ ] **CA-05** — **Dado** um aporte em D, **então** ele só rende a partir de D+1; **dado** um resgate em
+- [x] **CA-05** — **Dado** um aporte em D, **então** ele só rende a partir de D+1; **dado** um resgate em
       D, **então** o saldo de D ainda inclui o rendimento de D e depois reduz.
-- [ ] **CA-06** — **Dado** dois `SALDO`, **então** vale o mais recente e tudo antes dele é ignorado.
-- [ ] **CA-07** — **Dado** resgates, **então** consomem os lotes mais antigos primeiro (FIFO), inclusive
+- [x] **CA-06** — **Dado** dois `SALDO`, **então** vale o mais recente e tudo antes dele é ignorado.
+- [x] **CA-07** — **Dado** resgates, **então** consomem os lotes mais antigos primeiro (FIFO), inclusive
       resgate parcial de um lote.
-- [ ] **CA-08** — **Dado** um lote com 10 dias, rendimento R$ 100 e tabelas de IOF/IR, **então** IOF e IR
+- [x] **CA-08** — **Dado** um lote com 10 dias, rendimento R$ 100 e tabelas de IOF/IR, **então** IOF e IR
       batem com o cálculo à mão (IOF sobre o rendimento; IR sobre rendimento − IOF), e lote com > 720
       dias paga 15% de IR e 0% de IOF.
-- [ ] **CA-09** — **Dado** `FaixaImposto` vazia, **então** líquido `null` + `IMPOSTO_NAO_CONFIGURADO`.
-- [ ] **CA-10** — **Dado** `dataOrigem` mais antiga num `SALDO`, **então** o IR usa a idade a partir dela.
-- [ ] **CA-11** — **Dado** última data de CDI com mais de 4 dias de atraso, **então** `CDI_DEFASADO`;
+- [x] **CA-09** — **Dado** `FaixaImposto` vazia, **então** líquido `null` + `IMPOSTO_NAO_CONFIGURADO`.
+- [x] **CA-10** — **Dado** `dataOrigem` mais antiga num `SALDO`, **então** o IR usa a idade a partir dela.
+- [x] **CA-11** — **Dado** última data de CDI com mais de 4 dias de atraso, **então** `CDI_DEFASADO`;
       sem nenhum `SALDO`, `SEM_SALDO_INFORMADO`.
-- [ ] **CA-12** — **Dado** Caixinhas com `reservaDeGastos` verdadeiro/falso, **então** `patrimonio` =
+- [x] **CA-12** — **Dado** Caixinhas com `reservaDeGastos` verdadeiro/falso, **então** `patrimonio` =
       soma de todas as ativas, `investido` = as não-reserva, `disponivelParaGastar` = as reservas;
       inativas ficam fora dos três.
-- [ ] **CA-13** — **Dado** `POST /caixinhas` e `PATCH` com nome vazio, percentual negativo/> 100000 ou
+- [x] **CA-13** — **Dado** `POST /caixinhas` e `PATCH` com nome vazio, percentual negativo/> 100000 ou
       fracionário, **então** 400; 404 para id inexistente; `DELETE` apaga os movimentos.
-- [ ] **CA-14** — **Dado** `POST .../movimentos` com data futura, valor fracionário/negativo, `APORTE`
+- [x] **CA-14** — **Dado** `POST .../movimentos` com data futura, valor fracionário/negativo, `APORTE`
       ou `RESGATE` com valor 0, `dataOrigem` num `APORTE` ou depois da data, **então** 400; `SALDO` com
       valor 0 é válido.
-- [ ] **CA-15** — **Dado** `transacaoId` de uma transação `INVESTIMENTO` do tipo `DEBITO`, **então**
+- [x] **CA-15** — **Dado** `transacaoId` de uma transação `INVESTIMENTO` do tipo `DEBITO`, **então**
       só aceita `APORTE`; `CREDITO` só `RESGATE`; já vinculada → 409; inexistente ou de outra
       categoria → 422; valor omitido assume o módulo da transação.
-- [ ] **CA-16** — **Dado** `GET /movimentos/sugestoes?desde=`, **então** lista só `INVESTIMENTO` não
+- [x] **CA-16** — **Dado** `GET /movimentos/sugestoes?desde=`, **então** lista só `INVESTIMENTO` não
       vinculadas desde a data; sem `desde` ou malformado → 400.
-- [ ] **CA-17** — **Dado** `PUT /impostos/IR` com faixas fora de ordem, repetidas, alíquota > 10000 ou
+- [x] **CA-17** — **Dado** `PUT /impostos/IR` com faixas fora de ordem, repetidas, alíquota > 10000 ou
       `ateDias: null` fora da última, **então** 400 e a tabela anterior permanece; válida substitui tudo.
-- [ ] **CA-18** — **Dado** `POST /cdi/sincronizar` sem token, com token errado e com token certo, **então**
+- [x] **CA-18** — **Dado** `POST /cdi/sincronizar` sem token, com token errado e com token certo, **então**
       401/401/200; com o BCB fora do ar, 502 `CDI_INDISPONIVEL` genérico; rodar duas vezes não duplica dias.
-- [ ] **CA-19** — **Dado** a resposta do BCB (`[{"data":"02/01/2026","valor":"0.055131"}]`), **então** a
+- [x] **CA-19** — **Dado** a resposta do BCB (`[{"data":"02/01/2026","valor":"0.055131"}]`), **então** a
       conversão para `taxaE8` é exata por string (nunca `float`): `0.055131` → `55131`; valor malformado
       ou com mais de 6 casas → erro, nunca dado silenciosamente errado.
-- [ ] **CA-20** — **Dado** 200 entradas aleatórias, **então** todo número de saída é inteiro e o saldo
+- [x] **CA-20** — **Dado** 200 entradas aleatórias, **então** todo número de saída é inteiro e o saldo
       nunca é negativo por causa de resgate maior que o saldo (resgate excedente é limitado e avisado).
-- [ ] **CA-21** — **Dado** as rotas autenticadas sem access token, **então** 401.
-- [ ] **CA-22** — **Dado** as migrations, **então** `pnpm db:check-rls` passa.
-- [ ] **CA-23 (real)** — **Dado** a API local, **quando** crio as Caixinhas, informo saldos e consulto
-      `/carteira`, **então** responde coerente (com `CDI_DEFASADO` enquanto o CDI não puder ser
-      sincronizado); a comparação **numérica** com o app do Nubank é do humano (ver abaixo).
+- [x] **CA-21** — **Dado** as rotas autenticadas sem access token, **então** 401.
+- [x] **CA-22** — **Dado** as migrations, **então** `pnpm db:check-rls` passa.
+- [~] **CA-23 (real)** — **Dado** a API local, **quando** crio as Caixinhas, informo saldos e consulto
+  `/carteira`, **então** responde coerente (com `CDI_DEFASADO` enquanto o CDI não puder ser
+  sincronizado); a comparação **numérica** com o app do Nubank é do humano (ver abaixo).
 
 ## Para o humano verificar (não dá para o agente provar sozinho)
 

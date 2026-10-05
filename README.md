@@ -39,7 +39,7 @@ já acessível antes de rodar `dev`/`db:migrate`.
 ## Rotas da API (Fase 1)
 
 Tudo exige `Authorization: Bearer <accessToken>`, exceto `GET /health`, `POST /auth/login`,
-`POST /auth/refresh` e `POST /sync` (esta usa o header `x-sync-token`). Detalhe e erros em cada spec.
+`POST /auth/refresh`, `POST /sync` e `POST /cdi/sincronizar` (estas usam o header `x-sync-token`). Detalhe e erros em cada spec.
 
 | Rota                                                                                          | O que faz                                       | Spec |
 | --------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---- |
@@ -48,6 +48,10 @@ Tudo exige `Authorization: Bearer <accessToken>`, exceto `GET /health`, `POST /a
 | `GET /categorias`, `GET/POST /regras`, `DELETE /regras/:id`, `POST /categorizacao/recalcular` | categorização por regras                        | 03   |
 | `GET /transacoes`, `PATCH /transacoes/:id/categoria`                                          | listar e corrigir categoria                     | 03   |
 | `GET /poupanca?mes=YYYY-MM`, `GET /poupanca/historico?meses=N`                                | taxa de poupança                                | 04   |
+| `GET/POST /caixinhas`, `PATCH/DELETE /caixinhas/:id`, `GET/POST /caixinhas/:id/movimentos`    | Caixinhas e seus saldos/aportes/resgates        | 05   |
+| `DELETE /movimentos/:id`, `GET /movimentos/sugestoes?desde=`                                  | desfazer e sugerir vínculo com o sync           | 05   |
+| `GET /impostos`, `PUT /impostos/IR\|IOF`                                                      | tabelas de IR/IOF (editáveis)                   | 05   |
+| `GET /carteira?data=`, `POST /cdi/sincronizar` (header `x-sync-token`)                        | saldo estimado bruto/líquido; CDI do BCB        | 05   |
 
 Para rodar contra o Pluggy de verdade: suba a API (`pnpm dev`), faça login, e chame
 `POST /sync` com o `SYNC_CRON_TOKEN` do `.env`.

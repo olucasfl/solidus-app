@@ -92,24 +92,25 @@ model Conta {
 }
 
 model Transacao {
-  id                  String           @id @default(uuid())
-  pluggyTransactionId String           @unique
+  id                  String             @id @default(uuid())
+  pluggyTransactionId String             @unique
   contaId             String
-  conta               Conta            @relation(fields: [contaId], references: [id], onDelete: Cascade)
+  conta               Conta              @relation(fields: [contaId], references: [id], onDelete: Cascade)
   data                DateTime
-  descricao           String           @db.VarChar(500)
+  descricao           String             @db.VarChar(500)
   // negativo = saída, positivo = entrada; o sinal vem do `type` do Pluggy, nunca do valor cru
   valorCentavos       Int
   tipo                TipoTransacao
   status              StatusTransacao
-  moeda               String           @db.VarChar(3)
+  moeda               String             @db.VarChar(3)
   // dado auxiliar do Pluggy; a categoria do Solidus vem da spec 03-categorizacao
-  categoriaPluggy     String?          @db.VarChar(120)
+  categoriaPluggy     String?            @db.VarChar(120)
   // categoria do Solidus (id da taxonomia em packages/shared, validado no código) — spec 03
-  categoria           String?          @db.VarChar(40)
+  categoria           String?            @db.VarChar(40)
   origemCategoria     OrigemCategoria?
-  criadoEm            DateTime         @default(now())
-  atualizadoEm        DateTime         @updatedAt
+  criadoEm            DateTime           @default(now())
+  atualizadoEm        DateTime           @updatedAt
+  movimentoCaixinha   MovimentoCaixinha?
 
   @@index([contaId, data])
   @@index([data])
@@ -137,13 +138,74 @@ enum OrigemCategoria {
 }
 
 model RegraCategoria {
-  id         String         @id @default(uuid())
-  padrao     String         @db.VarChar(120)
-  categoria  String         @db.VarChar(40)
-  tipo       TipoTransacao?
+  id               String         @id @default(uuid())
+  padrao           String         @db.VarChar(120)
+  categoria        String         @db.VarChar(40)
+  tipo             TipoTransacao?
   // faixa opcional sobre o MÓDULO do valor (ex.: salário ≈ R$ 1.044), em centavos
   valorMinCentavos Int?
   valorMaxCentavos Int?
-  prioridade Int            @default(0)
-  criadoEm   DateTime       @default(now())
+  prioridade       Int            @default(0)
+  criadoEm         DateTime       @default(now())
+}
+
+// --- Carteira por Caixinha (spec 05-carteira-caixinhas). Nada fixo no código: Caixinhas, percentuais e
+// alíquotas de IR/IOF são dados editáveis. Dinheiro em centavos (Int); CDI como inteiro x10^8. ---
+
+model Caixinha {
+  id              String              @id @default(uuid())
+  nome            String              @db.VarChar(60)
+  // 11500 = 115% do CDI; 0 = não rende
+  percentualCdiBp Int
+  // conta no patrimônio, mas é verba para gastar no mês (não é "investido")
+  reservaDeGastos Boolean             @default(false)
+  ativa           Boolean             @default(true)
+  criadoEm        DateTime            @default(now())
+  atualizadoEm    DateTime            @updatedAt
+  movimentos      MovimentoCaixinha[]
+}
+
+enum TipoMovimentoCaixinha {
+  SALDO
+  APORTE
+  RESGATE
+}
+
+model MovimentoCaixinha {
+  id            String                @id @default(uuid())
+  caixinhaId    String
+  caixinha      Caixinha              @relation(fields: [caixinhaId], references: [id], onDelete: Cascade)
+  tipo          TipoMovimentoCaixinha
+  data          DateTime              @db.Date
+  valorCentavos Int
+  // só SALDO: desde quando o dinheiro já estava aplicado (define a idade para o IR); padrão = data
+  dataOrigem    DateTime?             @db.Date
+  // vínculo opcional com a transação do sync (automação assistida)
+  transacaoId   String?               @unique
+  transacao     Transacao?            @relation(fields: [transacaoId], references: [id], onDelete: SetNull)
+  criadoEm      DateTime              @default(now())
+
+  @@index([caixinhaId, data])
+}
+
+// CDI diário (série 12 do BCB, % ao dia) guardado como inteiro x10^8: 0,055131% a.d. => 55131
+model CdiDia {
+  data   DateTime @id @db.Date
+  taxaE8 Int
+}
+
+enum TipoImposto {
+  IR
+  IOF
+}
+
+// Tabela de alíquotas por idade do lote, editável pelo usuário.
+model FaixaImposto {
+  id         String      @id @default(uuid())
+  tipo       TipoImposto
+  // idade máxima do lote em dias (null = sem limite; só a última faixa)
+  ateDias    Int?
+  aliquotaBp Int
+
+  @@unique([tipo, ateDias])
 }

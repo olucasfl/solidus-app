@@ -7,14 +7,14 @@ visão/decisões de produto; aqui é só o "como o código está organizado".
 ## 1. Estado atual (vale mais que qualquer resumo — confira a data do último commit)
 
 **Existe:** monorepo pnpm, ESLint 9 (flat) + Prettier + Husky + lint-staged + commitlint,
-`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes` e `poupanca`; `auth` — usuário único via seed, login, refresh rotativo,
+`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes`, `poupanca` e `carteira` (Caixinhas, rendimento bruto/líquido); `auth` — usuário único via seed, login, refresh rotativo,
 logout, `me`; guard global validando o access token de verdade; `ValidationPipe` global, filtro de
 exceção, helmet, CORS, throttler básico com limite próprio no login), `packages/shared` (tipos
 `Centavos`/`CategoriaId`/contrato de auth), Prisma com os models `User`/`RefreshSession` (spec
-`01-fundacao-auth`) e `Conta`/`Transacao`/`SyncRun`/`RegraCategoria` (specs `02-sync-pluggy` e `03-categorizacao`), Jest configurado com teste de domínio, de DTO, de guard e e2e de `/health` e
+`01-fundacao-auth`) e `Conta`/`Transacao`/`SyncRun`/`RegraCategoria` (specs `02-sync-pluggy` e `03-categorizacao`) e `Caixinha`/`MovimentoCaixinha`/`CdiDia`/`FaixaImposto` (spec `05-carteira-caixinhas`), Jest configurado com teste de domínio, de DTO, de guard e e2e de `/health` e
 `/auth/*`. Scripts de spike do Pluggy em `apps/api/scripts/spike/`.
 
-**Não existe:** `apps/web` (só placeholder), qualquer coisa da Fase 2 em diante, CI/CD, deploy. Cada um entra com sua própria spec
+**Não existe:** `apps/web` (só placeholder), comparador, reserva, envelopes, política de gasto e chat (Fase 2 em diante, exceto a carteira), CI/CD, deploy. Cada um entra com sua própria spec
 (`docs/specs/INDEX.md`).
 
 ## 2. Workspaces
@@ -190,12 +190,33 @@ DESPESA entram — NEUTRA (fatura, aporte, transferência própria) fica fora, e
 `ENTRADAS_A_CLASSIFICAR`; receita zero devolve taxa `null` + `SEM_RECEITA`** — o número nunca é
 apresentado como confiável quando não é.
 
+### 4.9 `carteira` (spec `05-carteira-caixinhas`)
+
+Saldo **informado pelo usuário** por Caixinha + rendimento **calculado** (CDI × percentual), bruto e
+líquido, sem depender do Pluggy (ADR 0006). **Nada concreto no código**: Caixinhas, percentual do CDI,
+`reservaDeGastos` e as alíquotas de IR/IOF são linhas de banco que o usuário edita
+(`/caixinhas`, `PUT /impostos/:tipo`); as tabelas de imposto são **semeadas** pelo `db:seed` com a
+tabela legal conhecida (só se estiverem vazias; nunca sobrescrevem edição) e o cálculo só lê o banco.
+
+A conta é `domain/carteira/projetar.ts` (puro): saldo interno em **BigInt, centavos × 10¹²**, sem
+arredondar por dia (o Nubank não arredonda); só na saída vira centavos, **truncando**. Convenções
+(confirmar comparando com o app): o `SALDO` de um dia vale no fim dele; o rendimento do dia incide sobre
+o saldo do começo; aporte/resgate do dia entra depois do rendimento (aporte de hoje rende a partir de
+amanhã); só rende dia com CDI publicado; resgate consome os lotes mais antigos (FIFO). Líquido =
+estimativa "se resgatasse tudo hoje", por lote: IOF sobre o rendimento, IR sobre o que sobra, alíquotas
+pela idade do lote. CDI vem do BCB (série 12, % ao dia) por `POST /cdi/sincronizar` (token do cron),
+guardado como **inteiro × 10⁸** e convertido **por string** (`domain/carteira/bcb.ts`) — nunca `float`;
+formato inesperado é erro, não dado errado. A carteira (`GET /carteira`) nunca chama o BCB: avisa
+`CDI_DEFASADO` se o CDI gravado está velho. O Pluggy não diz de qual Caixinha é cada
+"Aplicação/Resgate RDB", então o sync só **sugere** (`GET /movimentos/sugestoes`) e o usuário vincula.
+
 ## 5. Prisma e RLS
 
 - **Modelos hoje** (`schema.prisma`): `User` (usuário único, criado pelo seed) e `RefreshSession`
   (uma por login/dispositivo; `cliente: WEB | PWA` decide a TTL do refresh — spec
-  `01-fundacao-auth`, `ARCHITECTURE.md` §4.5). `Conta`, `Transacao` e `SyncRun` (spec `02-sync-pluggy`, valores sempre em centavos `Int`). Categorização
-  e taxa de poupança entram com a spec de cada um.
+  `01-fundacao-auth`, `ARCHITECTURE.md` §4.5). `Conta`, `Transacao` e `SyncRun` (spec `02-sync-pluggy`, valores sempre em centavos `Int`),
+  `RegraCategoria` (spec 03) e `Caixinha`, `MovimentoCaixinha`, `CdiDia` (CDI × 10⁸) e `FaixaImposto`
+  (spec 05). A taxa de poupança (spec 04) não tem tabela própria: lê `Transacao`.
 - `schema.prisma`: `datasource db` usa `DATABASE_URL` (pooler de transação, runtime) e
   `directUrl` com `DIRECT_URL` (pooler de sessão, só para `migrate`). O Prisma conecta como role
   `postgres` — RLS não afeta as queries da API; existe para fechar a Data API do Supabase (não

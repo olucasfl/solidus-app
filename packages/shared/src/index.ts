@@ -1,4 +1,5 @@
 export * from './auth';
+export * from './carteira';
 export * from './categoria';
 export * from './money';
 export * from './poupanca';

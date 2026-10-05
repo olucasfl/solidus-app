@@ -4,7 +4,8 @@
 import { config as loadEnv } from 'dotenv';
 import { resolve } from 'node:path';
 import * as argon2 from 'argon2';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type TipoImposto } from '@prisma/client';
+import { IOF_PADRAO, IR_PADRAO } from '../src/domain/carteira/impostos-padrao';
 
 loadEnv({ path: resolve(__dirname, '../../../.env') });
 
@@ -24,6 +25,24 @@ function seedSenha(): string {
   return senha;
 }
 
+/** Semeia IR/IOF só se a tabela do tipo estiver vazia: o que o usuário editou nunca é sobrescrito. */
+async function semearImpostos(prisma: PrismaClient): Promise<void> {
+  const tabelas: Array<[TipoImposto, typeof IR_PADRAO]> = [
+    ['IR', IR_PADRAO],
+    ['IOF', IOF_PADRAO],
+  ];
+  for (const [tipo, faixas] of tabelas) {
+    if ((await prisma.faixaImposto.count({ where: { tipo } })) > 0) {
+      console.log(`Imposto ${tipo}: tabela já existe, mantida.`);
+      continue;
+    }
+    await prisma.faixaImposto.createMany({
+      data: faixas.map((f) => ({ tipo, ateDias: f.ateDias, aliquotaBp: f.aliquotaBp })),
+    });
+    console.log(`Imposto ${tipo}: ${faixas.length} faixas semeadas (confira em GET /impostos).`);
+  }
+}
+
 async function main(): Promise<void> {
   const prisma = new PrismaClient();
   try {
@@ -37,6 +56,7 @@ async function main(): Promise<void> {
     });
 
     console.log(`Seed ok — usuário único: ${usuario.email} (id ${usuario.id}).`);
+    await semearImpostos(prisma);
   } finally {
     await prisma.$disconnect();
   }
