@@ -215,8 +215,9 @@ Loop por tarefa: `pnpm --filter @solidus/api typecheck` → `pnpm --filter @soli
 (além da spec)
 
 - A migration leva o RLS **no mesmo arquivo** que cria a tabela (lição da spec 07).
-- `reservaEmergencia` usa `@ValidateIf` (e não `@IsOptional`) para que `null` seja 400. Os campos antigos `reservaDeGastos` e
-  `ativa` seguem com `@IsOptional`, que deixa `null` chegar ao Prisma (500 num `PATCH`): defeito **preexistente**, fora desta spec.
+- `reservaEmergencia` usa `@ValidateIf` (e não `@IsOptional`) para que `null` seja 400. Os campos antigos (`nome`, `percentualCdiBp`,
+  `reservaDeGastos`, `ativa`; e `padrao`, `categoria`, `prioridade` das regras) tinham o mesmo defeito (500 num `PATCH`):
+  **corrigido em 2026-10-06 num `/fix-bug` separado** (ver `ARCHITECTURE.md` §4.2).
 
 ## Fora de escopo
 

@@ -58,20 +58,22 @@ export class CriarCaixinhaDto {
   convencaoRendimento?: (typeof CONVENCOES)[number];
 }
 
+// nome, percentualCdiBp, reservaDeGastos e ativa: só são validados se ENVIADOS (`undefined` = "não mexe"). `@IsOptional()` trataria `null` como
+// ausente e o `null` chegaria ao Prisma, que o recusa numa coluna obrigatória (500). Em `convencaoRendimento` o null é PROPOSITAL (volta ao padrão).
 export class AtualizarCaixinhaDto {
-  @IsOptional()
+  @ValidateIf((o: AtualizarCaixinhaDto) => o.nome !== undefined)
   @Transform(trim)
   @IsString()
   @Length(1, 60)
   nome?: string;
 
-  @IsOptional()
+  @ValidateIf((o: AtualizarCaixinhaDto) => o.percentualCdiBp !== undefined)
   @IsInt()
   @Min(0)
   @Max(100_000)
   percentualCdiBp?: number;
 
-  @IsOptional()
+  @ValidateIf((o: AtualizarCaixinhaDto) => o.reservaDeGastos !== undefined)
   @Transform(booleanoCru)
   @IsBoolean()
   reservaDeGastos?: boolean;
@@ -90,7 +92,7 @@ export class AtualizarCaixinhaDto {
   @IsIn(CONVENCOES)
   convencaoRendimento?: (typeof CONVENCOES)[number] | null;
 
-  @IsOptional()
+  @ValidateIf((o: AtualizarCaixinhaDto) => o.ativa !== undefined)
   @Transform(booleanoCru)
   @IsBoolean()
   ativa?: boolean;

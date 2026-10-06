@@ -264,6 +264,48 @@ describe('carteira por Caixinha (e2e)', () => {
     });
   });
 
+  describe('PATCH /caixinhas/:id: null em campo OBRIGATÓRIO é 400, não 500', () => {
+    // `@IsOptional()` trata null como "ausente"; o service só olha `!== undefined`, e o null chegava ao
+    // Prisma, que o recusa numa coluna obrigatória (500). Em `convencaoRendimento` o null é PROPOSITAL.
+    it.each([
+      ['nome', { nome: null }],
+      ['percentualCdiBp', { percentualCdiBp: null }],
+      ['reservaDeGastos', { reservaDeGastos: null }],
+      ['ativa', { ativa: null }],
+    ])('%s: null → 400 e nada é gravado', async (_campo, corpo) => {
+      prisma.caixinha.update.mockClear();
+
+      const r = await http().patch(`/caixinhas/${UUID}`).set('Authorization', auth).send(corpo);
+
+      expect(r.status).toBe(400);
+      expect(prisma.caixinha.update).not.toHaveBeenCalled();
+    });
+
+    it('controle: convencaoRendimento null continua válido (volta ao padrão)', async () => {
+      prisma.caixinha.findFirst.mockResolvedValue({
+        id: UUID,
+        reservaDeGastos: false,
+        reservaEmergencia: false,
+      });
+      prisma.caixinha.update.mockResolvedValue({
+        id: UUID,
+        nome: 'Turbo',
+        percentualCdiBp: 11_500,
+        reservaDeGastos: false,
+        reservaEmergencia: false,
+        convencaoRendimento: null,
+        ativa: true,
+      });
+
+      const r = await http()
+        .patch(`/caixinhas/${UUID}`)
+        .set('Authorization', auth)
+        .send({ convencaoRendimento: null });
+
+      expect(r.status).toBe(200);
+    });
+  });
+
   it('CA-13: PATCH com `ativa` em texto ("false") é 400 — nunca vira true por conversão implícita', async () => {
     const r = await http()
       .patch(`/caixinhas/${UUID}`)

@@ -96,6 +96,11 @@ só para o corpo do erro 429 ter `code: 'LIMITE_TENTATIVAS'`, igual todo outro e
 `POST /auth/login` sobrescreve o limite global (`@Throttle()`, 5/min em vez do default de 60/min)
 — ver `modules/auth/auth.constants.ts`.
 
+**`null` em `PATCH`:** nos DTOs de edição parcial, um campo OBRIGATÓRIO usa `@ValidateIf(o => o.campo !== undefined)` e **não**
+`@IsOptional()`: este trata `null` como "ausente", e o `null` chegava ao Prisma, que o recusa numa coluna obrigatória (**500** em
+vez de 400). Só vale `null` onde ele significa algo (`convencaoRendimento`, `tipo` e os limites da faixa de uma regra: "remove a
+restrição"). Foi corrigido em 2026-10-06 nos `PATCH` de Caixinha e de regra; DTO novo de edição parcial segue o mesmo padrão.
+
 **Rota que nenhum controller casou:** o `CatchAllController` (`common/catch-all.controller.ts`, importado por último em
 `app.module.ts`) existe para uma rota inexistente não responder 404 do Express **antes** do guard (o que revelaria,
 sem login, se a rota existe). **Sem login responde 401**, igual a uma rota real; **com login válido responde 404**

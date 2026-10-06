@@ -158,6 +158,46 @@ describe('categorização e transações (e2e)', () => {
     });
   });
 
+  describe('PATCH /regras/:id: null em campo OBRIGATÓRIO é 400, não 500', () => {
+    // `@IsOptional()` trata null como "ausente"; o service só olha `!== undefined`, e o null chegava ao
+    // Prisma, que o recusa numa coluna obrigatória (500). Em `tipo` e nos limites o null é PROPOSITAL.
+    it.each([
+      ['padrao', { padrao: null }],
+      ['categoria', { categoria: null }],
+      ['prioridade', { prioridade: null }],
+    ])('%s: null → 400 e o banco nem é tocado', async (_campo, corpo) => {
+      prisma.regraCategoria.update.mockClear();
+
+      const r = await http().patch(`/regras/${UUID}`).set('Authorization', auth).send(corpo);
+
+      expect(r.status).toBe(400);
+      expect(prisma.regraCategoria.update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['tipo', { tipo: null }],
+      ['valorMinCentavos', { valorMinCentavos: null }],
+      ['valorMaxCentavos', { valorMaxCentavos: null }],
+    ])('controle: %s null continua válido (remove a restrição)', async (_campo, corpo) => {
+      const linha = {
+        id: UUID,
+        padrao: 'x',
+        categoria: 'MERCADO',
+        tipo: null,
+        valorMinCentavos: null,
+        valorMaxCentavos: null,
+        prioridade: 0,
+        criadoEm: new Date(),
+      };
+      prisma.regraCategoria.findFirst.mockResolvedValue(linha);
+      prisma.regraCategoria.update.mockResolvedValue(linha);
+
+      const r = await http().patch(`/regras/${UUID}`).set('Authorization', auth).send(corpo);
+
+      expect(r.status).toBe(200);
+    });
+  });
+
   describe('PATCH /regras/:id', () => {
     it.each([
       ['tipo inválido', { tipo: 'OUTRO' }],
