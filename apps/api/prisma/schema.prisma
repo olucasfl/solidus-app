@@ -43,6 +43,7 @@ model User {
   fontesRenda         FonteRenda[]
   conexaoPluggy       ConexaoPluggy?
   configuracaoReserva ConfiguracaoReserva?
+  envelopes           Envelope[]
 }
 
 enum PapelUsuario {
@@ -350,4 +351,22 @@ model ConfiguracaoReserva {
   base         BaseGastoReserva @default(BRUTA)
   janelaMeses  Int              @default(6)
   atualizadoEm DateTime         @updatedAt
+}
+
+// --- Envelopes virtuais (spec envelopes) ---
+
+// Uma divisão VIRTUAL do dinheiro (para que ele serve), independente das Caixinhas (onde ele está). Não move nem
+// altera dinheiro nenhum: é só o que o usuário quer reservar. `alocadoCentavos` é o valor ATUAL (sem histórico, v1).
+model Envelope {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nome            String   @db.VarChar(60)
+  alocadoCentavos Int      @default(0)
+  metaCentavos    Int?
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  @@unique([userId, nome])
+  @@index([userId])
 }

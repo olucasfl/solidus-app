@@ -8,3 +8,4 @@ export * from './transacoes';
 export * from './renda';
 export * from './conexao';
 export * from './reserva';
+export * from './envelopes';

@@ -12,6 +12,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CarteiraModule } from './modules/carteira/carteira.module';
 import { CategorizacaoModule } from './modules/categorizacao/categorizacao.module';
 import { ConexaoModule } from './modules/conexao/conexao.module';
+import { EnvelopesModule } from './modules/envelopes/envelopes.module';
 import { HealthModule } from './modules/health/health.module';
 import { PoupancaModule } from './modules/poupanca/poupanca.module';
 import { RendaModule } from './modules/renda/renda.module';
@@ -42,6 +43,7 @@ import { TransacoesModule } from './modules/transacoes/transacoes.module';
     RendaModule,
     ConexaoModule,
     ReservaModule,
+    EnvelopesModule,
     CarteiraModule,
     // Último de propósito: só casa rota que nenhum módulo anterior casou (ver CatchAllModule).
     CatchAllModule,

@@ -12,6 +12,7 @@ const MODELOS_DO_USUARIO = [
   'fonteRenda',
   'conexaoPluggy',
   'configuracaoReserva',
+  'envelope',
 ];
 const OPERACOES = [
   'findMany',

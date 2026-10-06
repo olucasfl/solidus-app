@@ -15,6 +15,7 @@ commit — `/docs-sync` confere se ela bate com a realidade.
 | Salário e Pix automáticos  | [07-salario-e-pix-automatico.md](07-salario-e-pix-automatico.md) | 🚧 em andamento           |
 | Aviso de conexão do Pluggy | [aviso-conexao-pluggy.md](aviso-conexao-pluggy.md)               | ✅ implementada           |
 | Reserva de emergência      | [reserva-emergencia.md](reserva-emergencia.md)                   | ✅ implementada           |
+| Envelopes virtuais         | [envelopes.md](envelopes.md)                                     | ✅ implementada           |
 
 ## Legenda de status
 

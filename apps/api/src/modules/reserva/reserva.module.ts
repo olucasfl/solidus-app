@@ -8,5 +8,7 @@ import { ReservaService } from './reserva.service';
   imports: [PoupancaModule, CarteiraModule],
   controllers: [ReservaController],
   providers: [ReservaService],
+  // Os envelopes (spec envelopes) leem a reserva e a meta daqui.
+  exports: [ReservaService],
 })
 export class ReservaModule {}

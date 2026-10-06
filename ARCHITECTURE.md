@@ -7,14 +7,14 @@ visão/decisões de produto; aqui é só o "como o código está organizado".
 ## 1. Estado atual (vale mais que qualquer resumo — confira a data do último commit)
 
 **Existe:** monorepo pnpm, ESLint 9 (flat) + Prettier + Husky + lint-staged + commitlint,
-`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes`, `poupanca`, `renda` (salário e fontes de renda), `conexao` (aviso de conexão do Pluggy), `reserva` (reserva de emergência) e `carteira` (Caixinhas, rendimento bruto/líquido); `auth` — usuário único via seed, login, refresh rotativo,
+`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes`, `poupanca`, `renda` (salário e fontes de renda), `conexao` (aviso de conexão do Pluggy), `reserva` (reserva de emergência), `envelopes` (envelopes virtuais) e `carteira` (Caixinhas, rendimento bruto/líquido); `auth` — usuário único via seed, login, refresh rotativo,
 logout, `me`; guard global validando o access token de verdade; `ValidationPipe` global, filtro de
 exceção, helmet, CORS, throttler básico com limite próprio no login), `packages/shared` (tipos
 `Centavos`/`CategoriaId`/contrato de auth), Prisma com os models `User`/`RefreshSession` (spec
 `01-fundacao-auth`) e `Conta`/`Transacao`/`SyncRun`/`RegraCategoria` (specs `02-sync-pluggy` e `03-categorizacao`) e `Caixinha`/`MovimentoCaixinha`/`CdiDia`/`FaixaImposto` (spec `05-carteira-caixinhas`), Jest configurado com teste de domínio, de DTO, de guard e e2e de `/health` e
 `/auth/*`. Scripts de spike do Pluggy em `apps/api/scripts/spike/`.
 
-**Não existe:** `apps/web` (só placeholder), comparador, reserva, envelopes, política de gasto e chat (Fase 2 em diante, exceto a carteira), CI/CD, deploy. Cada um entra com sua própria spec
+**Não existe:** `apps/web` (só placeholder), comparador, política de gasto e chat (Fase 2 em diante, exceto a carteira), CI/CD, deploy. Cada um entra com sua própria spec
 (`docs/specs/INDEX.md`).
 
 ## 2. Workspaces
@@ -329,13 +329,29 @@ corpo vazio → `400 CONFIGURACAO_VAZIA`; **`null` é 400**: `@ValidateIf` em ve
 deixaria chegar ao Prisma). Sem registro valem os padrões (6, BRUTA, 6). `PoupancaModule` e `CarteiraModule` passaram a
 **exportar** os serviços que o módulo consome.
 
+### 4.13 `envelopes` (spec `envelopes`)
+
+"Quanto do meu dinheiro está realmente livre?". Envelope é só uma **anotação** do usuário sobre como repartir o que tem
+(nada move dinheiro, RULES §1) e é independente da Caixinha (que diz **onde** o dinheiro está). A regra é pura e em centavos
+(`domain/envelopes/calcular-envelopes.ts`); o `EnvelopesService` só compõe `CarteiraService`, `ReservaService` (só a meta) e
+as contas. **Base** = Σ valor realizável (líquido, ou bruto se não houver) das Caixinhas **ativas** + saldo de contas
+CORRENTE/POUPANCA; cartão **nunca** soma (`FATURA_DO_CARTAO_NAO_DESCONTADA`). A **reserva** é um envelope automático e somente
+leitura: o saldo todo das Caixinhas ativas marcadas como reserva de emergência; `excedenteCentavos = max(0, valor − meta)` é só
+informativo. `livre = total − reserva − Σ alocado` e **pode ser negativo**: o app avisa (`ALOCADO_ACIMA_DO_DISPONIVEL`) e nunca
+bloqueia. Progresso = `⌊alocado × 10000 / meta⌋` (bp), `falta` nunca negativa; meta nula = sem meta.
+
+Rotas (autenticadas, dono = sessão): `GET /envelopes`, `POST /envelopes`, `PATCH /envelopes/:id`, `DELETE /envelopes/:id` (204).
+`null` só vale em `metaCentavos` (remove a meta); em `nome`/`alocadoCentavos` é 400 (`@ValidateIf`). Nome único por usuário
+(`409 ENVELOPE_JA_EXISTE`, vindo do P2002 do `@@unique([userId, nome])`); envelope de outro usuário é `404 ENVELOPE_NAO_ENCONTRADO`.
+`ReservaModule` passou a **exportar** `ReservaService`.
+
 ## 5. Prisma e RLS
 
 - **Modelos hoje** (`schema.prisma`): `User` (usuário único, criado pelo seed) e `RefreshSession`
   (uma por login/dispositivo; `cliente: WEB | PWA` decide a TTL do refresh — spec
   `01-fundacao-auth`, `ARCHITECTURE.md` §4.5). `Conta`, `Transacao` e `SyncRun` (spec `02-sync-pluggy`, valores sempre em centavos `Int`),
   `RegraCategoria` (spec 03) e `Caixinha`, `MovimentoCaixinha`, `CdiDia` (CDI × 10⁸) e `FaixaImposto`
-  (spec 05), `FonteRenda` (spec 07) `ConexaoPluggy` (spec aviso-conexao-pluggy), `ConfiguracaoReserva` (spec reserva-emergencia; `Caixinha` ganhou `reservaEmergencia`; `Transacao` ganhou `contraparteChave`/`Nome`/`DocMascarado`). A taxa de
+  (spec 05), `FonteRenda` (spec 07) `ConexaoPluggy` (spec aviso-conexao-pluggy), `Envelope` (spec envelopes), `ConfiguracaoReserva` (spec reserva-emergencia; `Caixinha` ganhou `reservaEmergencia`; `Transacao` ganhou `contraparteChave`/`Nome`/`DocMascarado`). A taxa de
   poupança (spec 04) não tem tabela própria: lê `Transacao`.
 - `schema.prisma`: `datasource db` usa `DATABASE_URL` (pooler de transação, runtime) e
   `directUrl` com `DIRECT_URL` (pooler de sessão, só para `migrate`). O Prisma conecta como role
