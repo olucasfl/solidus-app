@@ -1,5 +1,5 @@
 import { categoriaDaFonte, fonteDaTransacao, type FonteAplicavel } from './aplicar-fontes';
-import { detectarRecorrentes } from './detectar-recorrentes';
+import { CRITERIOS_PADRAO, detectarRecorrentes } from './detectar-recorrentes';
 
 const d = (iso: string) => new Date(`${iso}T12:00:00Z`);
 
@@ -94,7 +94,13 @@ describe('fonteDaTransacao', () => {
 });
 
 describe('detectarRecorrentes', () => {
-  const c = (chave: string, data: string) => ({ chave, data: d(data) });
+  // Valor padrão R$ 1.000: bem acima do mínimo, para os testes de meses/frequência não dependerem dele.
+  const c = (chave: string, data: string, valorCentavos = 100_000) => ({
+    chave,
+    data: d(data),
+    valorCentavos,
+  });
+  const chaves = (r: { chave: string }[]) => r.map((x) => x.chave);
 
   it('3 meses distintos → recorrente, com o primeiro recebimento como início', () => {
     const r = detectarRecorrentes([
@@ -121,7 +127,105 @@ describe('detectarRecorrentes', () => {
     ).toHaveLength(1);
   });
 
-  it('separa origens diferentes e respeita o mínimo configurável', () => {
+  it('lista vazia → nada', () => {
+    expect(detectarRecorrentes([])).toEqual([]);
+  });
+
+  describe('frequência: rateio paga muitas vezes por mês, renda não', () => {
+    const noMes = (chave: string, mes: string, quantos: number) =>
+      Array.from({ length: quantos }, (_, i) =>
+        c(chave, `${mes}-${String(i + 1).padStart(2, '0')}`),
+      );
+
+    it('exatamente 2 pagamentos por mês, em 3 meses, ainda é recorrente (limite inclusivo)', () => {
+      const creditos = [
+        ...noMes('x', '2026-01', 2),
+        ...noMes('x', '2026-02', 2),
+        ...noMes('x', '2026-03', 2),
+      ];
+      expect(chaves(detectarRecorrentes(creditos))).toEqual(['x']);
+    });
+
+    it('um pagamento a mais que o limite (7 em 3 meses) deixa de ser recorrente', () => {
+      const creditos = [
+        ...noMes('x', '2026-01', 3),
+        ...noMes('x', '2026-02', 2),
+        ...noMes('x', '2026-03', 2),
+      ];
+      expect(creditos).toHaveLength(7);
+      expect(detectarRecorrentes(creditos)).toEqual([]);
+    });
+
+    it('é a MÉDIA por mês ativo: um mês com 3 compensado por outros com 1 passa', () => {
+      const creditos = [
+        ...noMes('x', '2026-01', 3),
+        ...noMes('x', '2026-02', 1),
+        ...noMes('x', '2026-03', 1),
+        ...noMes('x', '2026-04', 1),
+      ];
+      expect(chaves(detectarRecorrentes(creditos))).toEqual(['x']);
+    });
+
+    it('padrão real de rateio: 55 pagamentos pequenos em 13 meses (≈ 4 por mês) não é renda', () => {
+      const creditos = Array.from({ length: 55 }, (_, i) =>
+        c(
+          'rateio',
+          `2025-${String((i % 13) + 1).padStart(2, '0')}`.replace('2025-13', '2026-01') + '-10',
+          8_500,
+        ),
+      );
+      expect(detectarRecorrentes(creditos)).toEqual([]);
+    });
+
+    it('padrão real de pagador frequente: 48 pagamentos de ≈ R$ 612 em 13 meses (≈ 3,7 por mês) não é renda', () => {
+      const creditos = Array.from({ length: 48 }, (_, i) =>
+        c('frequente', `2025-${String((i % 12) + 1).padStart(2, '0')}-10`, 61_200),
+      );
+      expect(detectarRecorrentes(creditos)).toEqual([]);
+    });
+  });
+
+  describe('valor médio mínimo de R$ 300', () => {
+    const tresMeses = (valorCentavos: number) => [
+      c('x', '2026-01-05', valorCentavos),
+      c('x', '2026-02-05', valorCentavos),
+      c('x', '2026-03-05', valorCentavos),
+    ];
+
+    it('exatamente R$ 300 de média passa (limite inclusivo)', () => {
+      expect(chaves(detectarRecorrentes(tresMeses(30_000)))).toEqual(['x']);
+    });
+
+    it('R$ 299,99 não passa', () => {
+      expect(detectarRecorrentes(tresMeses(29_999))).toEqual([]);
+    });
+
+    it('padrão real de rateio pequeno: R$ 36 a R$ 199 por mês, mesmo todo mês, não é renda', () => {
+      expect(detectarRecorrentes(tresMeses(3_600))).toEqual([]);
+      expect(detectarRecorrentes(tresMeses(19_900))).toEqual([]);
+    });
+
+    it('vale a MÉDIA, não cada pagamento: um pequeno e um grande podem passar juntos', () => {
+      const r = detectarRecorrentes([
+        c('x', '2026-01-05', 10_000),
+        c('x', '2026-02-05', 80_000),
+        c('x', '2026-03-05', 40_000),
+      ]);
+      expect(chaves(r)).toEqual(['x']); // média = 43.333 ≥ 30.000
+    });
+
+    it('a comparação é toda em inteiros (soma ≥ mínimo × pagamentos), sem arredondar a média', () => {
+      // média real = 29.999,67: um arredondamento ingênuo para 30.000 deixaria passar.
+      const r = detectarRecorrentes([
+        c('x', '2026-01-05', 30_000),
+        c('x', '2026-02-05', 30_000),
+        c('x', '2026-03-05', 29_999),
+      ]);
+      expect(r).toEqual([]);
+    });
+  });
+
+  it('separa origens diferentes e respeita critérios configuráveis', () => {
     const creditos = [
       c('x', '2026-01-05'),
       c('x', '2026-02-05'),
@@ -129,15 +233,17 @@ describe('detectarRecorrentes', () => {
       c('y', '2026-02-06'),
       c('y', '2026-03-06'),
     ];
-    expect(detectarRecorrentes(creditos).map((r) => r.chave)).toEqual(['y']);
+    expect(chaves(detectarRecorrentes(creditos))).toEqual(['y']);
     expect(
-      detectarRecorrentes(creditos, 2)
-        .map((r) => r.chave)
-        .sort(),
+      chaves(detectarRecorrentes(creditos, { ...CRITERIOS_PADRAO, minMeses: 2 })).sort(),
     ).toEqual(['x', 'y']);
   });
 
-  it('lista vazia → nada', () => {
-    expect(detectarRecorrentes([])).toEqual([]);
+  it('os limites escolhidos estão onde a spec diz (3 meses, 2 por mês, R$ 300)', () => {
+    expect(CRITERIOS_PADRAO).toEqual({
+      minMeses: 3,
+      maxPagamentosPorMes: 2,
+      valorMedioMinimoCentavos: 30_000,
+    });
   });
 });

@@ -58,6 +58,7 @@ function montar() {
         fonte({ id: 'nova', ...data }),
       ),
       createMany: jest.fn().mockResolvedValue({ count: 0 }),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       update: jest.fn(
         async ({ where, data }: { where: { id: string }; data: Partial<FonteRenda> }) =>
           fonte({ id: where.id, ...data }),
@@ -76,20 +77,23 @@ function montar() {
 }
 
 describe('RendaService.reconhecerRecorrentes', () => {
-  const credito = (chave: string, data: string) => ({
+  // Valor padrão R$ 1.000: acima do mínimo de R$ 300, para só os testes de valor mexerem nele.
+  const credito = (chave: string, data: string, valorCentavos = 100_000) => ({
     contraparteChave: chave,
     contraparteNome: 'Pagador Teste',
     contraparteDocMascarado: '***.456.789-**',
     data: d(data),
+    valorCentavos,
   });
+  const tresMeses = (chave: string, valorCentavos?: number) => [
+    credito(chave, '2026-03-10', valorCentavos),
+    credito(chave, '2026-02-10', valorCentavos),
+    credito(chave, '2026-01-10', valorCentavos),
+  ];
 
   it('CA-05: origem que pagou em 3 meses distintos vira fonte RECORRENTE automática', async () => {
     const { prisma, service } = montar();
-    prisma.transacao.findMany.mockResolvedValue([
-      credito('x', '2026-03-10'),
-      credito('x', '2026-02-10'),
-      credito('x', '2026-01-10'),
-    ]);
+    prisma.transacao.findMany.mockResolvedValue(tresMeses('x'));
 
     expect(await service.reconhecerRecorrentes(U)).toBe(1);
 
@@ -129,17 +133,95 @@ describe('RendaService.reconhecerRecorrentes', () => {
     expect(prisma.fonteRenda.createMany).not.toHaveBeenCalled();
   });
 
+  it('CA-05b: rateio (muitos pagamentos pequenos por mês) NÃO vira fonte, mesmo pagando todo mês', async () => {
+    const { prisma, service } = montar();
+    // 12 pagamentos de R$ 85 em 3 meses: 4 por mês e valor médio abaixo de R$ 300.
+    prisma.transacao.findMany.mockResolvedValue(
+      ['2026-01', '2026-02', '2026-03'].flatMap((mes) =>
+        [1, 2, 3, 4].map((dia) => credito('rateio', `${mes}-0${dia}`, 8_500)),
+      ),
+    );
+
+    expect(await service.reconhecerRecorrentes(U)).toBe(0);
+    expect(prisma.fonteRenda.createMany).not.toHaveBeenCalled();
+  });
+
+  it('CA-05b: valor médio abaixo de R$ 300 NÃO vira fonte, e frequência alta com valor alto também não', async () => {
+    const { prisma, service } = montar();
+    prisma.transacao.findMany.mockResolvedValue(tresMeses('pequena', 29_999));
+    expect(await service.reconhecerRecorrentes(U)).toBe(0);
+
+    prisma.transacao.findMany.mockResolvedValue(
+      ['2026-01', '2026-02', '2026-03'].flatMap((mes) =>
+        [1, 2, 3, 4].map((dia) => credito('frequente', `${mes}-0${dia}`, 61_200)),
+      ),
+    );
+    expect(await service.reconhecerRecorrentes(U)).toBe(0);
+    expect(prisma.fonteRenda.createMany).not.toHaveBeenCalled();
+  });
+
   it('origem que já tem fonte (mesmo DESATIVADA pelo usuário) não é recriada', async () => {
     const { prisma, service } = montar();
-    prisma.transacao.findMany.mockResolvedValue([
-      credito('x', '2026-03-10'),
-      credito('x', '2026-02-10'),
-      credito('x', '2026-01-10'),
-    ]);
+    prisma.transacao.findMany.mockResolvedValue(tresMeses('x'));
     prisma.fonteRenda.findMany.mockResolvedValue([{ contraparteChave: 'x' }]);
 
     expect(await service.reconhecerRecorrentes(U)).toBe(0);
     expect(prisma.fonteRenda.createMany).not.toHaveBeenCalled();
+  });
+
+  describe('poda das fontes automáticas que deixaram de qualificar', () => {
+    it('remove só as AUTOMATICAS, RECORRENTES e ATIVAS que não qualificam mais, do usuário da sessão', async () => {
+      const { prisma, service } = montar();
+      prisma.transacao.findMany.mockResolvedValue(tresMeses('continua'));
+      prisma.fonteRenda.findMany.mockResolvedValue([{ contraparteChave: 'continua' }]);
+
+      await service.reconhecerRecorrentes(U);
+
+      // Fonte desativada pelo usuário, promovida a salário (MANUAL) ou de outro usuário nunca entra aqui.
+      expect(prisma.fonteRenda.deleteMany).toHaveBeenCalledWith({
+        where: {
+          userId: U,
+          tipo: 'RECORRENTE',
+          origem: 'AUTOMATICA',
+          ativa: true,
+          contraparteChave: { notIn: ['continua'] },
+        },
+      });
+    });
+
+    it('se nenhuma origem qualifica mais, a lista de "manter" é vazia (poda todas as automáticas)', async () => {
+      const { prisma, service } = montar();
+      prisma.transacao.findMany.mockResolvedValue([]);
+
+      await service.reconhecerRecorrentes(U);
+
+      expect(prisma.fonteRenda.deleteMany.mock.calls[0]![0].where.contraparteChave).toEqual({
+        notIn: [],
+      });
+    });
+
+    it('devolve criadas + removidas, para quem chama saber que precisa reaplicar a categorização', async () => {
+      const { prisma, service } = montar();
+      prisma.transacao.findMany.mockResolvedValue(tresMeses('nova'));
+      prisma.fonteRenda.deleteMany.mockResolvedValue({ count: 3 });
+
+      expect(await service.reconhecerRecorrentes(U)).toBe(4);
+    });
+
+    it('só poda, sem criar nada: devolve as removidas e não chama createMany', async () => {
+      const { prisma, service } = montar();
+      prisma.transacao.findMany.mockResolvedValue([]);
+      prisma.fonteRenda.deleteMany.mockResolvedValue({ count: 2 });
+
+      expect(await service.reconhecerRecorrentes(U)).toBe(2);
+      expect(prisma.fonteRenda.createMany).not.toHaveBeenCalled();
+    });
+
+    it('nada para podar nem criar: devolve 0 (o sync não reaplica a categorização à toa)', async () => {
+      const { service } = montar();
+
+      expect(await service.reconhecerRecorrentes(U)).toBe(0);
+    });
   });
 });
 

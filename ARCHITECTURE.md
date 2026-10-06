@@ -252,7 +252,8 @@ RDB", então o sync só **sugere** (`GET /movimentos/sugestoes`) e o usuário vi
 
 Uma **fonte de renda** (`FonteRenda`) é uma origem (a `contraparteChave`) que paga renda: `SALARIO` (o
 usuário apontou uma transação: `POST /salario/fonte`) ou `RECORRENTE` (o Solidus reconheceu: a origem pagou
-em 3+ **meses distintos**, só entre Pix de pessoas). Vale por **dia (UTC)** entre `vigenteDesde` e
+em 3+ **meses distintos**, no máximo 2 pagamentos por mês e valor médio ≥ R$ 300, só entre Pix de pessoas; as
+automáticas ativas que deixam de cumprir o critério são **removidas** a cada sync). Vale por **dia (UTC)** entre `vigenteDesde` e
 `vigenteAte`; entrada da origem nesse intervalo vira `SALARIO` (ou `OUTRAS_RECEITAS`, na recorrente) com
 origem `FONTE_RENDA`. A regra pura vive em `domain/renda/` (`aplicar-fontes.ts`, `detectar-recorrentes.ts`);
 `categorizar()` a consulta entre a regra do usuário e o padrão (a exceção do usuário vence a automação).

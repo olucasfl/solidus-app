@@ -51,9 +51,13 @@ Padrão da casa. Sem dependência nova: o hash do documento usa `node:crypto` (H
 - **Pode haver mais de uma fonte de salário vigente ao mesmo tempo** (decisão "flexível" do
   humano): `POST /salario/fonte` **adiciona** uma fonte sem encerrar as outras; trocar mexe só na
   fonte escolhida. A mesma origem não pode ter duas fontes `SALARIO` ativas e sobrepostas (`409`).
-- **Renda recorrente automática:** contraparte que **paga em 3 ou mais meses distintos** vira
-  `FonteRenda` do tipo `RECORRENTE` (origem `AUTOMATICA`), categoria `OUTRAS_RECEITAS` (receita). O
-  usuário pode desativá-la (`ativa = false`) se o Solidus errou, ou promovê-la a salário.
+- **Renda recorrente automática:** contraparte que cumpre **as três condições** abaixo vira `FonteRenda` do
+  tipo `RECORRENTE` (origem `AUTOMATICA`), categoria `OUTRAS_RECEITAS` (receita): (1) **pagou em 3 ou mais
+  meses distintos**; (2) em média **no máximo 2 pagamentos por mês** em que pagou; (3) **valor médio por
+  pagamento de pelo menos R$ 300**. Só (1) não separava renda de rateio (ver "Achado do backfill"). O
+  usuário pode desativá-la (`ativa = false`) se o Solidus errou, ou promovê-la a salário. A cada sync, as
+  automáticas **ativas** que deixaram de cumprir o critério são **removidas** (fonte desativada pelo usuário
+  ou promovida a salário nunca é tocada, e uma desativada nunca é recriada).
 - **Prioridade na categorização (da mais forte para a mais fraca):** regra manual do usuário
   (`/regras`, `PATCH /transacoes/:id/categoria`) > fonte de renda > categoria do Pluggy. Exceção do
   usuário sempre vence a automação.
@@ -139,7 +143,9 @@ categorias `PIX_*`). Rebuildar o shared antes da api.
 
 Em `apps/api/src/domain/`, **sem Nest nem Prisma**, centavos inteiros (nunca float):
 
-- `renda/detectar-recorrentes.ts` — contrapartes com crédito em ≥ 3 meses distintos.
+- `renda/detectar-recorrentes.ts` — contrapartes com crédito em ≥ 3 meses distintos, ≤ 2 pagamentos por
+  mês (média) e valor médio ≥ R$ 300. Comparações **inteiras** (`pagamentos ≤ 2 × meses`, `soma ≥ 30000 ×
+pagamentos`), sem divisão nem float.
 - `renda/aplicar-fontes.ts` — dada a transação e as fontes (vigência, ativa), decide se é `SALARIO`,
   `OUTRAS_RECEITAS` ou nada; respeita a vigência.
 - `poupanca/pix-liquido.ts` — `liquido = saídas − entradas`; despesa se `> 0`, abatimento limitado
@@ -164,8 +170,14 @@ Em `apps/api/src/domain/`, **sem Nest nem Prisma**, centavos inteiros (nunca flo
 - [ ] **Dado** fontes de salário vigentes, **quando** `GET /salario`, **então** vêm as fontes
       vigentes, o valor atual (soma do último recebimento de cada uma) e o histórico ordenado por data
       decrescente.
-- [ ] **Dado** uma contraparte que pagou em 3 meses distintos, **quando** o sync roda, **então**
-      existe uma `FonteRenda` `RECORRENTE`/`AUTOMATICA` e suas entradas contam como `OUTRAS_RECEITAS`.
+- [ ] **Dado** uma contraparte que pagou em 3 meses distintos, no máximo 2 vezes por mês e com valor
+      médio ≥ R$ 300, **quando** o sync roda, **então** existe uma `FonteRenda` `RECORRENTE`/`AUTOMATICA` e
+      suas entradas contam como `OUTRAS_RECEITAS`.
+- [ ] **Dado** uma contraparte que paga todo mês mas com muitos pagamentos pequenos (rateio: mais de 2 por
+      mês ou média abaixo de R$ 300), **quando** o sync roda, **então** **não** vira fonte e suas entradas
+      continuam `PIX_RECEBIDO_DE_PESSOAS` (entram pelo líquido do mês).
+- [ ] **Dado** uma fonte `RECORRENTE` automática ativa que não cumpre mais o critério, **quando** o sync
+      roda, **então** ela é removida; uma desativada pelo usuário ou promovida a salário **não** é.
 - [ ] **Dado** uma fonte `RECORRENTE` automática, **quando** `PATCH /renda/fontes/:id { ativa: false }`,
       **então** deixa de contar como receita.
 - [ ] **Dado** num mês Pix de pessoas com saídas maiores que entradas, **quando**
@@ -208,23 +220,25 @@ Loop por tarefa: `pnpm --filter @solidus/api typecheck` → `pnpm --filter @soli
 - [x] **Privacidade verificada no banco:** 495 transações com chave (todas hex de 64), 0 documentos em claro
       em qualquer coluna.
 - [x] **QA contra a API real:** 27/27 verificações de contrato e erro (401/400/404/422), sem criar fonte.
-- [ ] **Marcar o salário** (`POST /salario/fonte`) e **revisar as 11 fontes recorrentes** reconhecidas: o humano
-      faz quando o front existir. Ver "Achado do backfill".
+- [x] **Critério de recorrência endurecido** (2026-10-05, opção A do humano): ver "Achado do backfill". Falta
+      rodar um sync para podar as fontes antigas no banco.
+- [ ] **Marcar o salário** (`POST /salario/fonte`) e **conferir as fontes recorrentes** que sobrarem: o humano
+      faz quando o front existir.
 - [ ] `/qa-verify` formal e fechamento da spec (✅ implementada) depois do item acima.
 
-## Achado do backfill (2026-10-05) — a regra de recorrência pode estar larga demais
+## Achado do backfill (2026-10-05) — a regra de recorrência estava larga demais (resolvido)
 
-As 11 fontes automáticas (agregado, sem nomes): 2 têm valor alto (uma soma ≈ R$ 29 mil em 48 pagamentos
-ao longo de 13 meses; outra ≈ R$ 6 mil em 7); **as outras 9 são de valor pequeno** (média de R$ 36 a
-R$ 199, total de R$ 108 a R$ 4,7 mil) e a de 55 pagamentos com média de ≈ R$ 85 parece rateio do dia a
-dia, não renda. Elas entram como `OUTRAS_RECEITAS` e inflam a receita (R$ 3 a 6 mil por mês contra um
-salário de ≈ R$ 1 mil). A regra aprovada (3 meses distintos) faz o que foi pedido, mas o dado real mostra que
-**3 meses sozinho não separa renda de rateio recorrente**. Opções, a decidir pelo humano:
+As 11 fontes reconhecidas só com "3 meses" (agregado, sem nomes): 2 de valor alto (uma somava ≈ R$ 29 mil em
+48 pagamentos ao longo de 13 meses, ≈ 3,7 por mês; outra ≈ R$ 6 mil em 7) e **9 de valor pequeno** (média de
+R$ 36 a R$ 199). A de 55 pagamentos com média ≈ R$ 85 era rateio do dia a dia. Todas entravam como
+`OUTRAS_RECEITAS` e inflavam a receita (R$ 3 a 6 mil por mês contra um salário de ≈ R$ 1 mil).
 
-1. Manter e desativar à mão as erradas (`PATCH /renda/fontes/:id { ativa: false }`) quando houver front.
-2. Endurecer o critério: além de 3 meses, exigir **no máximo ~2 pagamentos por mês** (rateio costuma ser
-   frequente e pequeno) e/ou um **valor médio mínimo**.
-3. Tratar a detecção como **sugestão** (não entra na receita até o usuário confirmar).
+**Decisão do humano (opção A, endurecer):** além de 3 meses, no máximo 2 pagamentos por mês (média) **e**
+valor médio ≥ R$ 300. Os números são uma escolha minha a partir desse dado, ajustáveis em
+`domain/renda/detectar-recorrentes.ts` (constantes `MAX_PAGAMENTOS_POR_MES` e
+`VALOR_MEDIO_MINIMO_CENTAVOS`). **Custo conhecido:** renda recorrente menor que R$ 300 por pagamento não é
+reconhecida sozinha (o usuário ainda pode marcá-la à mão). Não escolhidas: manter e corrigir à mão (taxa
+otimista até o front) e virar sugestão que só entra na receita depois de confirmada (depende do front).
 
 ## Fora de escopo
 
@@ -243,7 +257,7 @@ salário de ≈ R$ 1 mil). A regra aprovada (3 meses distintos) faz o que foi pe
 
 ## Decisões do humano (2026-10-05)
 
-- [x] **1. "Recorrente" = 3 meses distintos.** Aprovado.
+- [x] **1. "Recorrente" = 3 meses distintos.** Aprovado; **emendada em 2026-10-05** (mais: ≤ 2 pagamentos por mês e média ≥ R$ 300, ver "Achado do backfill").
 - [x] **2. Reembolso abate despesa** até o limite das despesas do mês, sem virar receita
       (opção A). Aprovado.
 - [x] **3. Fontes de salário: flexível** ("não sei, deixa flexível") → pode haver mais de uma ao

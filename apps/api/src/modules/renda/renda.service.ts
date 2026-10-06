@@ -57,9 +57,12 @@ export class RendaService {
   ) {}
 
   /**
-   * Origens de Pix de pessoas que pagaram em 3+ meses distintos viram fonte RECORRENTE automática
-   * (renda). Quem já tem fonte (inclusive uma que o usuário DESATIVOU) não é recriada: o "não" do
-   * usuário vale. Devolve quantas fontes nasceram; quem chama reaplica a categorização se > 0.
+   * Mantém as fontes RECORRENTES automáticas em dia com o critério de `detectarRecorrentes` (3+ meses
+   * distintos, no máximo 2 pagamentos por mês, valor médio ≥ R$ 300): cria as que passaram a qualificar e
+   * REMOVE as automáticas que deixaram de qualificar (sem isso, endurecer o critério não limparia o que já
+   * foi reconhecido). Não toca em: fonte que o usuário DESATIVOU (o "não" dele vale, e ela também impede a
+   * recriação), nem em fonte promovida a salário (origem MANUAL). Devolve quantas fontes nasceram ou
+   * saíram; quem chama reaplica a categorização se > 0.
    */
   async reconhecerRecorrentes(userId: string): Promise<number> {
     const [creditos, existentes] = await Promise.all([
@@ -75,20 +78,35 @@ export class RendaService {
           contraparteNome: true,
           contraparteDocMascarado: true,
           data: true,
+          valorCentavos: true,
         },
         orderBy: { data: 'desc' },
       }),
       this.prisma.fonteRenda.findMany({ where: { userId }, select: { contraparteChave: true } }),
     ]);
 
-    const jaTem = new Set(existentes.map((e) => e.contraparteChave));
-    const novos = detectarRecorrentes(
+    const qualificam = detectarRecorrentes(
       creditos.flatMap((c) =>
-        c.contraparteChave ? [{ chave: c.contraparteChave, data: c.data }] : [],
+        c.contraparteChave
+          ? [{ chave: c.contraparteChave, data: c.data, valorCentavos: Math.abs(c.valorCentavos) }]
+          : [],
       ),
-    ).filter((r) => !jaTem.has(r.chave));
+    );
+
+    const { count: removidas } = await this.prisma.fonteRenda.deleteMany({
+      where: {
+        userId,
+        tipo: 'RECORRENTE',
+        origem: 'AUTOMATICA',
+        ativa: true,
+        contraparteChave: { notIn: qualificam.map((r) => r.chave) },
+      },
+    });
+
+    const jaTem = new Set(existentes.map((e) => e.contraparteChave));
+    const novos = qualificam.filter((r) => !jaTem.has(r.chave));
     if (novos.length === 0) {
-      return 0;
+      return removidas;
     }
 
     // `creditos` vem do mais recente para o mais antigo: o primeiro de cada chave dá nome e máscara.
@@ -113,7 +131,7 @@ export class RendaService {
         vigenteDesde: inicioDoDia(dia(r.desde)),
       })),
     });
-    return novos.length;
+    return novos.length + removidas;
   }
 
   async salario(userId: string): Promise<SalarioResponse> {
