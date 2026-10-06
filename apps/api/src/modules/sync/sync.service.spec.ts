@@ -5,6 +5,7 @@ import { type ContaPluggy, type TransacaoPluggy } from '../../domain/sync/mapear
 import { type EnvironmentVariables } from '../../config/env.validation';
 import { PrismaService } from '../../database/prisma.service';
 import { type CategorizacaoService } from '../categorizacao/categorizacao.service';
+import { type ConexaoService } from '../conexao/conexao.service';
 import { type RendaService } from '../renda/renda.service';
 import { PluggyGateway, PluggySdkGateway } from './pluggy.gateway';
 import {
@@ -71,14 +72,16 @@ function montar(itemId: string | undefined = 'item-1', segredoContraparte?: stri
     recalcular: jest.fn().mockResolvedValue({ analisadas: 0, alteradas: 0 }),
   };
   const renda = { reconhecerRecorrentes: jest.fn().mockResolvedValue(0) };
+  const conexao = { registrar: jest.fn().mockResolvedValue(undefined) };
   const service = new SyncService(
     prisma as unknown as PrismaService,
     gateway as unknown as PluggyGateway,
     config as unknown as ConfigService<EnvironmentVariables, true>,
     categorizacao as unknown as CategorizacaoService,
     renda as unknown as RendaService,
+    conexao as unknown as ConexaoService,
   );
-  return { prisma, gateway, categorizacao, renda, service };
+  return { prisma, gateway, categorizacao, renda, conexao, service };
 }
 
 describe('SyncService.sincronizar', () => {
@@ -331,6 +334,36 @@ describe('SyncService.sincronizar', () => {
     });
   });
 
+  describe('estado da conexão (spec aviso-conexao-pluggy)', () => {
+    it('lê o item ANTES de listar contas e transações, para o dono e o item configurados', async () => {
+      const { conexao, gateway, service } = montar();
+
+      await service.sincronizar();
+
+      expect(conexao.registrar).toHaveBeenCalledWith(U, 'item-1');
+      expect(conexao.registrar.mock.invocationCallOrder[0]!).toBeLessThan(
+        gateway.listarContas.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('registra o estado mesmo quando o resto do sync falha (é justamente aí que ele mais importa)', async () => {
+      const { conexao, gateway, service } = montar();
+      gateway.listarContas.mockRejectedValue(new PluggyIndisponivelError());
+
+      await expect(service.sincronizar()).rejects.toBeInstanceOf(PluggyIndisponivelError);
+
+      expect(conexao.registrar).toHaveBeenCalledTimes(1);
+    });
+
+    it('sem PLUGGY_ITEM_ID não há item para ler (503 antes de tudo)', async () => {
+      const { conexao, service } = montar('');
+
+      await expect(service.sincronizar()).rejects.toBeInstanceOf(PluggyNaoConfiguradoError);
+
+      expect(conexao.registrar).not.toHaveBeenCalled();
+    });
+  });
+
   it('CA-12: sem PLUGGY_ITEM_ID responde 503 e não chama o gateway', async () => {
     const { gateway, service } = montar('');
 
@@ -414,6 +447,6 @@ describe('PluggySdkGateway (CA-16: só leitura)', () => {
     const metodos = Object.getOwnPropertyNames(PluggySdkGateway.prototype).filter(
       (n) => n !== 'constructor' && !['sdk', 'executar'].includes(n),
     );
-    expect(metodos.sort()).toEqual(['listarContas', 'listarTransacoes']);
+    expect(metodos.sort()).toEqual(['listarContas', 'listarItem', 'listarTransacoes']);
   });
 });

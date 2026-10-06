@@ -10,6 +10,7 @@ const MODELOS_DO_USUARIO = [
   'caixinha',
   'movimentoCaixinha',
   'fonteRenda',
+  'conexaoPluggy',
 ];
 const OPERACOES = [
   'findMany',

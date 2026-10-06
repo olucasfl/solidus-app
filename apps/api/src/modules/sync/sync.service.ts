@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { type EnvironmentVariables } from '../../config/env.validation';
 import { PrismaService } from '../../database/prisma.service';
 import { CategorizacaoService } from '../categorizacao/categorizacao.service';
+import { ConexaoService } from '../conexao/conexao.service';
 import { RendaService } from '../renda/renda.service';
 import { mapearConta, mapearTransacao, type TransacaoMapeada } from '../../domain/sync/mapear';
 import { SYNC_JANELA_SOBREPOSICAO_DIAS } from './sync.constants';
@@ -56,6 +57,7 @@ export class SyncService {
     private readonly config: ConfigService<EnvironmentVariables, true>,
     private readonly categorizacao: CategorizacaoService,
     private readonly renda: RendaService,
+    private readonly conexao: ConexaoService,
   ) {}
 
   async sincronizar(opcoes: OpcoesSync = {}): Promise<SyncResponse> {
@@ -88,6 +90,9 @@ export class SyncService {
     };
 
     try {
+      // Lê o estado do item ANTES de listar contas (spec aviso-conexao-pluggy). Nunca lança: falhar aqui não
+      // pode abortar o sync; a listagem abaixo tem o seu próprio tratamento de erro.
+      await this.conexao.registrar(donoId, itemId);
       await this.executar(donoId, itemId, contadores, opcoes.completo === true);
       await this.categorizarSemDerrubar(donoId, opcoes.completo === true);
       await this.registrar(donoId, iniciadoEm, 'SUCESSO', contadores);

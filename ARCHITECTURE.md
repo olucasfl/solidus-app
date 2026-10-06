@@ -7,7 +7,7 @@ visão/decisões de produto; aqui é só o "como o código está organizado".
 ## 1. Estado atual (vale mais que qualquer resumo — confira a data do último commit)
 
 **Existe:** monorepo pnpm, ESLint 9 (flat) + Prettier + Husky + lint-staged + commitlint,
-`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes`, `poupanca`, `renda` (salário e fontes de renda) e `carteira` (Caixinhas, rendimento bruto/líquido); `auth` — usuário único via seed, login, refresh rotativo,
+`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes`, `poupanca`, `renda` (salário e fontes de renda), `conexao` (aviso de conexão do Pluggy) e `carteira` (Caixinhas, rendimento bruto/líquido); `auth` — usuário único via seed, login, refresh rotativo,
 logout, `me`; guard global validando o access token de verdade; `ValidationPipe` global, filtro de
 exceção, helmet, CORS, throttler básico com limite próprio no login), `packages/shared` (tipos
 `Centavos`/`CategoriaId`/contrato de auth), Prisma com os models `User`/`RefreshSession` (spec
@@ -272,13 +272,35 @@ DTOs nunca levam a chave do documento**, só nome e máscara; `GET /transacoes` 
 docMascarado}` para a pessoa reconhecer a origem. Erros 422 usam `code` estável (`NAO_E_ENTRADA`,
 `SEM_CONTRAPARTE`, `FONTE_NAO_VIGENTE`, `MESMA_ORIGEM`, `DATA_ANTERIOR_AO_INICIO`).
 
+### 4.11 `conexao` (spec `aviso-conexao-pluggy`)
+
+Antes, se o consentimento do Meu Pluggy vencesse, o login caísse ou o sync parasse, o app seguia mostrando dado velho
+sem avisar. Agora **todo `POST /sync` lê o item** (`PluggyGateway.listarItem`, que chama `fetchItem`: leitura, o
+guarda "só `listar*`/`fetch*`" continua valendo; **reautorizar ou forçar atualização é escrita e é proibido**, o
+Solidus só avisa) **antes** de listar contas e grava um **retrato** em `ConexaoPluggy` (uma linha por usuário): status
+do item, `consentExpiresAt`, `lastUpdatedAt`, `nextAutoSyncAt`, `autoSyncDisabledAt`, falhas de login, se há
+`userAction` (só o booleano) e `verificadoEm`. **Só códigos e datas**: `error`, `statusDetail` e o conteúdo de
+`userAction` podem trazer texto do banco ou link de autorização e nem entram no tipo (`domain/conexao/item.ts`); o
+`upsert` lista os campos um a um, sem `...item`. `ConexaoService.registrar` **nunca lança** (nem no caminho do
+erro): se o Pluggy falha, o retrato anterior fica e só `erroVerificacao = PLUGGY_INDISPONIVEL` muda; na próxima
+leitura boa ele é limpo. O `PluggyGateway` ganhou um módulo próprio (`PluggyModule`) para o sync e a conexão
+compartilharem a mesma instância sem dependência circular.
+
+`GET /conexao` (autenticada, **só leitura**) **não chama o Pluggy**: avalia o retrato gravado com
+`domain/conexao/avaliar.ts` (pura, relógio injetado) e devolve `{ situacao: OK|ATENCAO|CRITICO, avisos, conexao,
+calculadoEm }` **sem o `itemId`**. Limites em `domain/conexao/limites.ts`: consentimento avisa a 30 dias (ATENCAO) e vira
+CRITICO a 7; dado do Pluggy velho há **mais de** 2 dias é ATENCAO e de 7 é CRITICO; mesma régua para o **sync do
+próprio Solidus parado** (`SYNC_DO_SOLIDUS_PARADO`, que cobre o agendador que ainda não existe). Login inválido, ação
+pendente, auto-sync desativado e consentimento vencido são CRITICO; `OUTDATED` é ATENCAO; `UPDATING`/`MERGING` não avisam;
+sem retrato é `NUNCA_SINCRONIZADO` (200, não erro). O canal é só a API (decisão do humano): e-mail e Web Push ficam fora.
+
 ## 5. Prisma e RLS
 
 - **Modelos hoje** (`schema.prisma`): `User` (usuário único, criado pelo seed) e `RefreshSession`
   (uma por login/dispositivo; `cliente: WEB | PWA` decide a TTL do refresh — spec
   `01-fundacao-auth`, `ARCHITECTURE.md` §4.5). `Conta`, `Transacao` e `SyncRun` (spec `02-sync-pluggy`, valores sempre em centavos `Int`),
   `RegraCategoria` (spec 03) e `Caixinha`, `MovimentoCaixinha`, `CdiDia` (CDI × 10⁸) e `FaixaImposto`
-  (spec 05), e `FonteRenda` (spec 07; `Transacao` ganhou `contraparteChave`/`Nome`/`DocMascarado`). A taxa de
+  (spec 05), `FonteRenda` (spec 07) e `ConexaoPluggy` (spec aviso-conexao-pluggy; `Transacao` ganhou `contraparteChave`/`Nome`/`DocMascarado`). A taxa de
   poupança (spec 04) não tem tabela própria: lê `Transacao`.
 - `schema.prisma`: `datasource db` usa `DATABASE_URL` (pooler de transação, runtime) e
   `directUrl` com `DIRECT_URL` (pooler de sessão, só para `migrate`). O Prisma conecta como role

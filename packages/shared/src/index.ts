@@ -6,3 +6,4 @@ export * from './poupanca';
 export * from './sync';
 export * from './transacoes';
 export * from './renda';
+export * from './conexao';

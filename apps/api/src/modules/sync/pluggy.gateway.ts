@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PluggyClient } from 'pluggy-sdk';
+import { mapearItem, type ItemPluggy } from '../../domain/conexao/item';
 import { type ContaPluggy, type TransacaoPluggy } from '../../domain/sync/mapear';
 import { type EnvironmentVariables } from '../../config/env.validation';
 import { PluggyIndisponivelError } from './sync-errors';
@@ -12,6 +13,8 @@ import { PluggyIndisponivelError } from './sync-errors';
 export abstract class PluggyGateway {
   abstract listarContas(itemId: string): Promise<ContaPluggy[]>;
   abstract listarTransacoes(contaId: string, dateFrom?: string): Promise<TransacaoPluggy[]>;
+  /** Estado do item (spec aviso-conexao-pluggy). Só leitura; devolve só códigos e datas. */
+  abstract listarItem(itemId: string): Promise<ItemPluggy>;
 }
 
 @Injectable()
@@ -31,6 +34,11 @@ export class PluggySdkGateway extends PluggyGateway {
     return this.executar(() =>
       this.sdk().fetchAllTransactions(contaId, dateFrom ? { dateFrom } : undefined),
     );
+  }
+
+  async listarItem(itemId: string): Promise<ItemPluggy> {
+    // `fetchItem` é leitura. Quem reautoriza ou força atualização é o usuário, no meu.pluggy.ai (RULES §1).
+    return this.executar(async () => mapearItem(await this.sdk().fetchItem(itemId)));
   }
 
   private sdk(): PluggyClient {

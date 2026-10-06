@@ -33,14 +33,15 @@ model User {
   // null = USUARIO. ADMIN edita o que é global (tabelas de imposto).
   papel        PapelUsuario?
 
-  sessoes     RefreshSession[]
-  contas      Conta[]
-  transacoes  Transacao[]
-  syncRuns    SyncRun[]
-  regras      RegraCategoria[]
-  caixinhas   Caixinha[]
-  movimentos  MovimentoCaixinha[]
-  fontesRenda FonteRenda[]
+  sessoes       RefreshSession[]
+  contas        Conta[]
+  transacoes    Transacao[]
+  syncRuns      SyncRun[]
+  regras        RegraCategoria[]
+  caixinhas     Caixinha[]
+  movimentos    MovimentoCaixinha[]
+  fontesRenda   FonteRenda[]
+  conexaoPluggy ConexaoPluggy?
 }
 
 enum PapelUsuario {
@@ -301,4 +302,30 @@ model FaixaImposto {
   aliquotaBp Int
 
   @@unique([tipo, ateDias])
+}
+
+// --- Aviso de conexão do Pluggy (spec aviso-conexao-pluggy) ---
+
+// Retrato do estado do item do Pluggy, gravado a cada sync. SÓ códigos e datas: nunca a mensagem de erro,
+// o statusDetail nem o conteúdo de userAction (podem trazer texto do banco ou link de autorização).
+model ConexaoPluggy {
+  id                    String    @id @default(uuid())
+  userId                String    @unique
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId                String    @db.VarChar(64)
+  // código do Pluggy (UPDATED, LOGIN_ERROR, ...)
+  statusItem            String?   @db.VarChar(40)
+  statusExecucao        String?   @db.VarChar(40)
+  consentimentoExpiraEm DateTime?
+  ultimaAtualizacaoEm   DateTime?
+  proximaAtualizacaoEm  DateTime?
+  autoSyncDesativadoEm  DateTime?
+  falhasDeLogin         Int?
+  // só se há userAction pendente, nunca o conteúdo
+  acaoPendente          Boolean   @default(false)
+  // última leitura BEM-SUCEDIDA do item pelo Solidus
+  verificadoEm          DateTime?
+  // só o code (ex.: PLUGGY_INDISPONIVEL), nunca a mensagem do Pluggy
+  erroVerificacao       String?   @db.VarChar(60)
+  atualizadoEm          DateTime  @updatedAt
 }

@@ -43,10 +43,21 @@ async function montar(env: Record<string, unknown>) {
       update: jest.fn(),
     },
     syncRun: { create: jest.fn().mockResolvedValue(undefined), findFirst: jest.fn() },
+    conexaoPluggy: { upsert: jest.fn().mockResolvedValue(undefined) },
   };
   const gateway = {
     listarContas: jest.fn().mockResolvedValue([]),
     listarTransacoes: jest.fn().mockResolvedValue([]),
+    listarItem: jest.fn().mockResolvedValue({
+      statusItem: 'UPDATED',
+      statusExecucao: 'SUCCESS',
+      consentimentoExpiraEm: null,
+      ultimaAtualizacaoEm: null,
+      proximaAtualizacaoEm: null,
+      autoSyncDesativadoEm: null,
+      falhasDeLogin: 0,
+      acaoPendente: false,
+    }),
   };
 
   const moduleRef = await Test.createTestingModule({

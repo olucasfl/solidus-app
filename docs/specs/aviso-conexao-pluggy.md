@@ -1,6 +1,7 @@
 # Spec: Aviso de conexão do Pluggy caída, expirando ou desatualizada
 
-> Status: **aprovada** pelo humano em 2026-10-06 (opção A, só pela API; limites e suposições aceitos).
+> Status: **✅ implementada** (2026-10-06) — aprovada pelo humano na mesma data (opção A, só pela API). Migration aplicada
+> no Supabase remoto e verificada contra a API e o item reais (ver "Pendências de execução").
 > Requisito original do produto (`docs/produto.md`: "o consentimento tem prazo e precisa ser renovado; o app
 > deve detectar a conexão caída ou expirada e me avisar"), até aqui **não implementado**.
 
@@ -112,7 +113,8 @@ interface ConexaoResponse {
 
 **Aditivo** (uma tabela nova; nenhum campo existente muda). Leva `ENABLE ROW LEVEL SECURITY` +
 `REVOKE ALL ... FROM anon, authenticated`, sem policy; `pnpm db:check-rls` precisa passar (`RULES.md` §6).
-Migration **separada para o RLS não esquecer** (lição da spec 07: o Prisma não gera RLS).
+**Uma migration só, com o RLS no mesmo arquivo** (decisão de implementação: a ideia de uma migration separada
+não evita o problema da spec 07, em que a tabela ficou ~1 min sem RLS entre as duas; no mesmo arquivo não existe janela).
 
 ```prisma
 model ConexaoPluggy {
@@ -198,6 +200,28 @@ mesmo commit, com os limites exatos (7, 8, 30 e 31 dias; 2 e 7 dias de atraso).
 Loop por tarefa: `pnpm --filter @solidus/api typecheck` → `pnpm --filter @solidus/api test` →
 `pnpm lint` → `pnpm build`.
 
+## Pendências de execução
+
+- [x] **Migration** `20261006143000_aviso_conexao_pluggy` aplicada no Supabase remoto (2026-10-06) com `migrate deploy`;
+      `pnpm db:check-rls` passou, **sem janela sem RLS** (tabela e RLS no mesmo arquivo).
+- [x] **Verificação real** contra a API local e o item verdadeiro: `GET /conexao` sem retrato → `NUNCA_SINCRONIZADO`;
+      depois de um `POST /sync` → `situacao: "OK"`, `status: "UPDATED"`, consentimento em 2027-10-02, `verificadoEm` de
+      agora; um 2º sync atualiza o mesmo retrato; a resposta nunca contém o `itemId`; sem token → 401; os métodos
+      de escrita não alteram nada. **Caminho do erro ao vivo:** com um item inexistente, o retrato anterior foi
+      **mantido**, apareceu `PLUGGY_INDISPONIVEL` (ATENCAO) e o `itemId` falso não vazou; um sync normal em seguida
+      limpou o erro (`situacao: "OK"`).
+- [x] **Testes:** 676 no total (37 suítes), 37 do domínio nas bordas exatas, 12 mutantes mortos.
+
+## Achados fora do escopo desta spec (para outra execução)
+
+1. **`CatchAllController` devolve 200 vazio com login válido** para qualquer rota inexistente ou método errado
+   (ex.: `GET /rota-que-nao-existe`, `DELETE /salario`); só sem login ele responde 401 como previsto. Não escreve nem
+   vaza nada, mas esconde erro de rota de quem consome a API. O e2e desta spec não pegou porque o módulo de teste não
+   inclui o `CatchAll`; por isso a prova de "não há escrita em `/conexao`" foi feita conferindo que o retrato **não
+   muda**, e não pelo status 404.
+2. **`POST /sync` com um `PLUGGY_ITEM_ID` inexistente responde 200 com 0 contas**, em silêncio. Antes desta spec nada
+   avisaria; agora o aviso `PLUGGY_INDISPONIVEL` cobre o caso, mas o sync em si continua não sinalizando.
+
 ## Fora de escopo
 
 - **Notificar** (e-mail, Web Push): a decisão foi só pela API; o push da Fase 3 reaproveita o retrato.
@@ -220,6 +244,12 @@ novo, `listarItem`).
 - **Só `GET /conexao`:** o front chama a rota ao abrir. Não adiciono `avisos` dentro de `/poupanca` nem de
   `/carteira` (evita mexer em contratos existentes).
 - **Uma conexão por usuário** (hoje o item vem do `.env`); `userId` único na tabela.
+- **Decisões de implementação:** (a) `lastUpdatedAt` nulo (nenhuma coleta registrada) vira `DADOS_DESATUALIZADOS`
+  `ATENCAO` sem `dias`; (b) `verificadoEm` nulo não gera `SYNC_DO_SOLIDUS_PARADO` (a falha aparece como
+  `PLUGGY_INDISPONIVEL`); (c) `AUTO_SYNC_DESATIVADO` e `ULTIMA_ATUALIZACAO_FALHOU` não têm ação sugerida (a spec só
+  dava ação ao consentimento, ao login e ao sync parado); (d) o `PluggyGateway` foi movido para um `PluggyModule`
+  (sem mudança de comportamento) para evitar dependência circular; (e) `autoSyncDisabledAt` existe na resposta real
+  mas o SDK 0.91 não o tipa: é lido por uma forma estrutural no mapeador.
 - `OUTDATED` é só ATENCAO (a execução falhou mas pode ser tentada de novo); login inválido e ação pendente
   são CRITICO.
 - **Nome do arquivo** sem número (`aviso-conexao-pluggy.md`), como o pedido do comando; se preferir seguir a

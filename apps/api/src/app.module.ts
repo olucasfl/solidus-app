@@ -11,6 +11,7 @@ import { PrismaModule } from './database/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CarteiraModule } from './modules/carteira/carteira.module';
 import { CategorizacaoModule } from './modules/categorizacao/categorizacao.module';
+import { ConexaoModule } from './modules/conexao/conexao.module';
 import { HealthModule } from './modules/health/health.module';
 import { PoupancaModule } from './modules/poupanca/poupanca.module';
 import { RendaModule } from './modules/renda/renda.module';
@@ -38,6 +39,7 @@ import { TransacoesModule } from './modules/transacoes/transacoes.module';
     TransacoesModule,
     PoupancaModule,
     RendaModule,
+    ConexaoModule,
     CarteiraModule,
     // Último de propósito: só casa rota que nenhum módulo anterior casou (ver CatchAllModule).
     CatchAllModule,
