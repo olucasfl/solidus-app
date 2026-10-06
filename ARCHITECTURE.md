@@ -96,6 +96,13 @@ só para o corpo do erro 429 ter `code: 'LIMITE_TENTATIVAS'`, igual todo outro e
 `POST /auth/login` sobrescreve o limite global (`@Throttle()`, 5/min em vez do default de 60/min)
 — ver `modules/auth/auth.constants.ts`.
 
+**Rota que nenhum controller casou:** o `CatchAllController` (`common/catch-all.controller.ts`, importado por último em
+`app.module.ts`) existe para uma rota inexistente não responder 404 do Express **antes** do guard (o que revelaria,
+sem login, se a rota existe). **Sem login responde 401**, igual a uma rota real; **com login válido responde 404**
+`ROTA_NAO_ENCONTRADA`, inclusive para método errado numa rota que existe (ex.: `DELETE /salario`). Até 2026-10-06 o
+corpo era vazio e, com login, devolvia 200, escondendo erro de rota de quem consome a API; o teste
+`catch-all.e2e.spec.ts` cobre os dois lados.
+
 ### 4.3 `GET /health`
 
 Único endpoint `@Public()` hoje. Checa o banco com `SELECT 1` (`PrismaService.isHealthy()`) e

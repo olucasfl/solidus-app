@@ -214,7 +214,8 @@ Loop por tarefa: `pnpm --filter @solidus/api typecheck` → `pnpm --filter @soli
 
 ## Achados fora do escopo desta spec (para outra execução)
 
-1. **`CatchAllController` devolve 200 vazio com login válido** para qualquer rota inexistente ou método errado
+1. **(Corrigido em 2026-10-06, `/fix-bug` separado: agora 404 `ROTA_NAO_ENCONTRADA` com login, 401 sem login.)**
+   **`CatchAllController` devolvia 200 vazio com login válido** para qualquer rota inexistente ou método errado
    (ex.: `GET /rota-que-nao-existe`, `DELETE /salario`); só sem login ele responde 401 como previsto. Não escreve nem
    vaza nada, mas esconde erro de rota de quem consome a API. O e2e desta spec não pegou porque o módulo de teste não
    inclui o `CatchAll`; por isso a prova de "não há escrita em `/conexao`" foi feita conferindo que o retrato **não
