@@ -204,6 +204,46 @@ describe('CdiService.atualizarSeNecessario — o CDI se mantém sozinho', () => 
     expect(gateway.buscar).toHaveBeenCalledTimes(1);
   });
 
+  describe('a janela de 15 minutos só conta tentativa que de fato foi ao BCB (CA-25, regressão)', () => {
+    it('checagem que conclui "não precisa" (sem movimento) NÃO consome a janela: o movimento que aparece logo depois dispara a busca', async () => {
+      const { prisma, gateway, service } = pronto({ movimento: null });
+
+      // ex.: um GET /carteira antes de existir qualquer Caixinha
+      await service.atualizarSeNecessario();
+      expect(gateway.buscar).not.toHaveBeenCalled();
+
+      // o usuário cria a Caixinha e informa o saldo; o relógio não andou (mesmo instante)
+      prisma.movimentoCaixinha.aggregate.mockResolvedValue({ _min: { data: d('2026-09-01') } });
+      await service.atualizarSeNecessario();
+
+      expect(gateway.buscar).toHaveBeenCalledTimes(1);
+    });
+
+    it('o boot sem movimento NÃO queima a janela: a primeira consulta com movimento busca o CDI', async () => {
+      const { prisma, gateway, service } = pronto({ movimento: null });
+
+      service.onApplicationBootstrap();
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      expect(gateway.buscar).not.toHaveBeenCalled();
+
+      prisma.movimentoCaixinha.aggregate.mockResolvedValue({ _min: { data: d('2026-09-01') } });
+      await service.atualizarSeNecessario();
+
+      expect(gateway.buscar).toHaveBeenCalledTimes(1);
+    });
+
+    it('guarda: tentativa que FOI ao BCB e falhou continua respeitando os 15 minutos', async () => {
+      const { gateway, service } = pronto({ movimento: '2026-09-01' });
+      gateway.buscar.mockRejectedValue(new CdiIndisponivelError());
+
+      await service.atualizarSeNecessario();
+      await service.atualizarSeNecessario();
+
+      expect(gateway.buscar).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('ao subir, tenta deixar o CDI em dia sem bloquear', async () => {
     const { gateway, service } = pronto({ movimento: '2026-09-01' });
 

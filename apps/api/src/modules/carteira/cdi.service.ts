@@ -40,7 +40,6 @@ export class CdiService implements OnApplicationBootstrap {
    */
   async atualizarSeNecessario(esperaMaximaMs = ESPERA_MAXIMA_MS): Promise<void> {
     if (!this.emAndamento && Date.now() - this.ultimaTentativa >= INTERVALO_ENTRE_TENTATIVAS_MS) {
-      this.ultimaTentativa = Date.now();
       this.emAndamento = this.tentarAtualizar().finally(() => {
         this.emAndamento = null;
       });
@@ -56,6 +55,10 @@ export class CdiService implements OnApplicationBootstrap {
   private async tentarAtualizar(): Promise<void> {
     try {
       if (await this.precisaAtualizar()) {
+        // A janela de 15 min conta só a tentativa que de fato vai ao BCB. Gravá-la antes da checagem
+        // fazia o boot (ou uma consulta sem movimento) gastar a janela sem buscar nada, e o primeiro
+        // movimento criado logo depois ficava sem CDI até 15 minutos.
+        this.ultimaTentativa = Date.now();
         await this.sincronizar();
       }
     } catch (error) {

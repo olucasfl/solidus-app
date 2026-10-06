@@ -1,10 +1,10 @@
 # Spec: Carteira por Caixinha (saldo manual + rendimento calculado)
 
-> Status: em andamento (2026-10-05) — implementada e verificada contra a API e o banco reais, **menos**
-> o que o ambiente não alcança: o CDI ao vivo do BCB e a comparação numérica com o app do Nubank (CA-23). — **autoaprovada pelo agente sob delegação**, depois de o humano
-> responder as 5 questões da v1. Dois pontos continuam sendo dele (ver "Para o humano verificar"):
-> as **alíquotas de IR/IOF** (são dados editáveis, semeados com a tabela legal que o agente conhece)
-> e a **convenção de dia de rendimento** (confirmada comparando com o app do Nubank).
+> Status: **✅ implementada** (2026-10-05) — os 27 critérios verificados contra a API e o banco reais por
+> `/qa-verify`: 26 na primeira rodada e o **CA-25** depois de um `/fix-bug` (ver "Achado do qa-verify").
+> **Autoaprovada pelo agente sob delegação**, depois de o humano responder as 5 questões da v1. Continuam
+> sendo dele (ver "Para o humano verificar"): as **alíquotas de IR/IOF** (dados editáveis, semeados com a
+> tabela legal) e a **comparação numérica com o app do Nubank** (o app já se confere sozinho, CA-24).
 
 ## Objetivo
 
@@ -22,7 +22,8 @@ saber algo, ele **mostra o aviso** em vez de chutar.
 
 ## Diretrizes do humano (2026-10-05, reforço)
 
-- **O app é para outras pessoas também, não só para o Lucas**: nada de valor, nome ou banco fixo no
+- **(Superada em 2026-10-05: o app ficou de uso pessoal, spec 06 obsoleta; o princípio de "nada fixo no
+  código" continua valendo.) O app é para outras pessoas também, não só para o Lucas**: nada de valor, nome ou banco fixo no
   código; tudo que varia por pessoa/banco é dado editável (Caixinhas, percentuais, convenção de
   rendimento, tabelas de imposto).
 - **Tudo que não depende do usuário tem de se resolver sozinho e ser conferido, não suposto**: o CDI
@@ -45,7 +46,8 @@ saber algo, ele **mostra o aviso** em vez de chutar.
 Padrão da casa. **Sem dependência nova**: o CDI vem da API pública do Banco Central (série SGS 12,
 CDI diário, % ao dia) via `fetch`, atrás de uma interface `CdiGateway` (mockada nos testes), no mesmo
 molde do `PluggyGateway`. O ambiente onde a spec foi escrita **não alcançava** a API do BCB; o
-formato abaixo é o documentado e **não foi verificado ao vivo** (ver "Para o humano verificar").
+formato abaixo é o documentado e **foi verificado ao vivo em 2026-10-05** (o BCB passou a ser alcançável: `POST /cdi/sincronizar` → `200`, e o
+rendimento da API bateu centavo a centavo com um recálculo independente em `BigInt` usando o CDI real).
 
 ## Comportamento esperado
 
@@ -283,6 +285,19 @@ lotes FIFO, alíquota por idade, impostos. Jest no mesmo commit, inclusive teste
    movimentação mensal e pode pagar 120% a clientes de planos pagos): por isso o percentual é dado da
    Caixinha. Limitação conhecida: o percentual é um só por Caixinha; se mudar, informe um novo `SALDO`
    (o cálculo recomeça dele).
+
+## Achado do qa-verify (2026-10-05): CA-25 não funcionava de verdade
+
+Os testes unitários passavam (BCB simulado), mas ao vivo a carteira **não buscava o CDI sozinha**: com movimento e
+`CdiDia` vazio, `GET /carteira` voltava com `CDI_DEFASADO` e nenhuma busca, enquanto o `POST /cdi/sincronizar`
+manual funcionava. **Causa:** `CdiService.atualizarSeNecessario` gravava `ultimaTentativa` **antes** de
+`precisaAtualizar()` decidir se ia mesmo ao BCB; então o boot (ou uma consulta sem movimento) gastava a janela
+de 15 minutos sem buscar nada, e o primeiro movimento criado logo depois ficava sem CDI até 15 minutos.
+**Correção:** a janela só conta a tentativa que de fato vai ao BCB (uma linha movida em `cdi.service.ts`).
+**Regressão:** 3 testes em `cdi.service.spec.ts` (boot sem movimento e consulta sem movimento não queimam a
+janela; tentativa que falhou no BCB continua respeitando os 15 minutos). Reproduzido e confirmado ao vivo antes e
+depois (`CdiDia` 0 → 19 dias sozinho, 1ª consulta `avisos=[]`). **Custo:** duas consultas agregadas baratas por
+`GET /carteira` quando o CDI está em dia, que antes eram evitadas dentro da janela.
 
 ## Plano de testes
 
