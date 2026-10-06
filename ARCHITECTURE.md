@@ -7,7 +7,7 @@ visão/decisões de produto; aqui é só o "como o código está organizado".
 ## 1. Estado atual (vale mais que qualquer resumo — confira a data do último commit)
 
 **Existe:** monorepo pnpm, ESLint 9 (flat) + Prettier + Husky + lint-staged + commitlint,
-`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes`, `poupanca`, `renda` (salário e fontes de renda), `conexao` (aviso de conexão do Pluggy) e `carteira` (Caixinhas, rendimento bruto/líquido); `auth` — usuário único via seed, login, refresh rotativo,
+`apps/api` com NestJS 11 (`health`, `sync` — Pluggy, só leitura; `categorizacao`, `transacoes`, `poupanca`, `renda` (salário e fontes de renda), `conexao` (aviso de conexão do Pluggy), `reserva` (reserva de emergência) e `carteira` (Caixinhas, rendimento bruto/líquido); `auth` — usuário único via seed, login, refresh rotativo,
 logout, `me`; guard global validando o access token de verdade; `ValidationPipe` global, filtro de
 exceção, helmet, CORS, throttler básico com limite próprio no login), `packages/shared` (tipos
 `Centavos`/`CategoriaId`/contrato de auth), Prisma com os models `User`/`RefreshSession` (spec
@@ -301,13 +301,36 @@ próprio Solidus parado** (`SYNC_DO_SOLIDUS_PARADO`, que cobre o agendador que a
 pendente, auto-sync desativado e consentimento vencido são CRITICO; `OUTDATED` é ATENCAO; `UPDATING`/`MERGING` não avisam;
 sem retrato é `NUNCA_SINCRONIZADO` (200, não erro). O canal é só a API (decisão do humano): e-mail e Web Push ficam fora.
 
+### 4.12 `reserva` (spec `reserva-emergencia`)
+
+"Quantos meses eu aguento hoje e quanto falta para a meta?". **Não confundir com `Caixinha.reservaDeGastos`** (spec 05: verba
+para GASTAR no mês): a reserva de **emergência** é `reservaEmergencia`, um campo novo da Caixinha que o usuário marca, e uma
+Caixinha não pode ser as duas (`400 CAIXINHA_RESERVAS_INCOMPATIVEIS`, valendo o estado **resultante** do `PATCH`).
+
+A regra é pura e em centavos inteiros (`domain/reserva/calcular-reserva.ts`); o `ReservaService` só compõe. **Gasto mensal:**
+os últimos `janelaMeses` (padrão 6) meses **fechados** (pede `janela + 1` à poupança e descarta o corrente), a partir do
+primeiro mês com transação (mês anterior ao início dos dados não é "mês sem gasto"). Por mês, **bruto** = `despesasCentavos +
+pixPessoas.abatimentoCentavos` (sem creditar o Pix recebido) e **líquido** = `despesasCentavos`; a **base padrão é a bruta**
+(decisão do humano: reserva é um número em que é melhor errar para cima, e o Pix só fica confiável com o front). A média é
+`⌈soma / n⌉` em inteiros (`⌊(soma + n − 1) / n⌋`, nunca float) e despesa negativa vale 0. **Meta** = média × `meses` (padrão 6).
+**Saldo** = Σ do saldo **líquido estimado** (depois de IR/IOF) das Caixinhas **ativas e marcadas**; líquido nulo usa o bruto
+com `IMPOSTO_NAO_CONFIGURADO`; `CDI_DEFASADO` e `SEM_SALDO_INFORMADO` da carteira são repassados. **Cobertura** em centésimos de
+mês (`450` = 4,50), truncada; **falta** nunca negativa; **atingida** = meta > 0 e saldo ≥ meta. Sem Caixinha marcada:
+`NENHUMA_CAIXINHA_MARCADA` (não um número enganoso).
+
+Rotas (autenticadas, dono = usuário da sessão): `GET /reserva-emergencia` (só leitura, devolve as **duas** médias e a meta pela
+base configurada) e `PATCH /reserva-emergencia/configuracao` (`meses` 1–60, `base` BRUTA|LIQUIDA, `janelaMeses` 1–24; parcial;
+corpo vazio → `400 CONFIGURACAO_VAZIA`; **`null` é 400**: `@ValidateIf` em vez de `@IsOptional`, que trataria `null` como ausente e o
+deixaria chegar ao Prisma). Sem registro valem os padrões (6, BRUTA, 6). `PoupancaModule` e `CarteiraModule` passaram a
+**exportar** os serviços que o módulo consome.
+
 ## 5. Prisma e RLS
 
 - **Modelos hoje** (`schema.prisma`): `User` (usuário único, criado pelo seed) e `RefreshSession`
   (uma por login/dispositivo; `cliente: WEB | PWA` decide a TTL do refresh — spec
   `01-fundacao-auth`, `ARCHITECTURE.md` §4.5). `Conta`, `Transacao` e `SyncRun` (spec `02-sync-pluggy`, valores sempre em centavos `Int`),
   `RegraCategoria` (spec 03) e `Caixinha`, `MovimentoCaixinha`, `CdiDia` (CDI × 10⁸) e `FaixaImposto`
-  (spec 05), `FonteRenda` (spec 07) e `ConexaoPluggy` (spec aviso-conexao-pluggy; `Transacao` ganhou `contraparteChave`/`Nome`/`DocMascarado`). A taxa de
+  (spec 05), `FonteRenda` (spec 07) `ConexaoPluggy` (spec aviso-conexao-pluggy), `ConfiguracaoReserva` (spec reserva-emergencia; `Caixinha` ganhou `reservaEmergencia`; `Transacao` ganhou `contraparteChave`/`Nome`/`DocMascarado`). A taxa de
   poupança (spec 04) não tem tabela própria: lê `Transacao`.
 - `schema.prisma`: `datasource db` usa `DATABASE_URL` (pooler de transação, runtime) e
   `directUrl` com `DIRECT_URL` (pooler de sessão, só para `migrate`). O Prisma conecta como role

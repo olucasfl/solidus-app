@@ -14,6 +14,7 @@ commit — `/docs-sync` confere se ela bate com a realidade.
 | Multiusuário               | [06-multiusuario.md](06-multiusuario.md)                         | 🗑️ obsoleta (uso pessoal) |
 | Salário e Pix automáticos  | [07-salario-e-pix-automatico.md](07-salario-e-pix-automatico.md) | 🚧 em andamento           |
 | Aviso de conexão do Pluggy | [aviso-conexao-pluggy.md](aviso-conexao-pluggy.md)               | ✅ implementada           |
+| Reserva de emergência      | [reserva-emergencia.md](reserva-emergencia.md)                   | ✅ implementada           |
 
 ## Legenda de status
 

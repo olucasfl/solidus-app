@@ -15,6 +15,8 @@ export interface Caixinha {
   percentualCdiBp: number;
   /** Conta no patrimônio, mas é verba para gastar no mês (não é "investido"). */
   reservaDeGastos: boolean;
+  /** Faz parte da reserva de EMERGÊNCIA (não confundir com `reservaDeGastos`). Spec reserva-emergencia. */
+  reservaEmergencia: boolean;
   /** `null` = convenção padrão do app. */
   convencaoRendimento: ConvencaoRendimento | null;
   ativa: boolean;
@@ -24,6 +26,7 @@ export interface CriarCaixinhaRequest {
   nome: string;
   percentualCdiBp: number;
   reservaDeGastos?: boolean;
+  reservaEmergencia?: boolean;
   convencaoRendimento?: ConvencaoRendimento;
 }
 
@@ -31,6 +34,7 @@ export interface AtualizarCaixinhaRequest {
   nome?: string;
   percentualCdiBp?: number;
   reservaDeGastos?: boolean;
+  reservaEmergencia?: boolean;
   /** `null` volta para a convenção padrão. */
   convencaoRendimento?: ConvencaoRendimento | null;
   ativa?: boolean;
@@ -90,6 +94,7 @@ export interface CaixinhaNaCarteira {
   nome: string;
   percentualCdiBp: number;
   reservaDeGastos: boolean;
+  reservaEmergencia: boolean;
   ativa: boolean;
   saldoInformado: { data: string; centavos: number } | null;
   saldoBrutoEstimadoCentavos: number;

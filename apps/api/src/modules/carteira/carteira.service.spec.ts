@@ -14,6 +14,7 @@ function caixinha(p: Record<string, unknown>) {
     nome: 'Turbo',
     percentualCdiBp: 10_000,
     reservaDeGastos: false,
+    reservaEmergencia: false,
     ativa: true,
     movimentos: [],
     ...p,
@@ -56,6 +57,24 @@ describe('CarteiraService.consultar', () => {
     await service.consultar(U);
 
     expect(cdiService.atualizarSeNecessario).toHaveBeenCalledTimes(1);
+  });
+
+  it('expõe reservaEmergencia em cada Caixinha da carteira (spec reserva-emergencia)', async () => {
+    const { prisma, service } = montar();
+    prisma.caixinha.findMany.mockResolvedValue([
+      caixinha({
+        id: 'turbo',
+        reservaEmergencia: true,
+        movimentos: [saldo('2026-10-04', 100_000)],
+      }),
+      caixinha({ id: 'outra', movimentos: [saldo('2026-10-04', 100_000)] }),
+    ]);
+    prisma.cdiDia.findMany.mockResolvedValue([]);
+
+    const r = await service.consultar(U);
+
+    expect(r.caixinhas.find((c) => c.id === 'turbo')!.reservaEmergencia).toBe(true);
+    expect(r.caixinhas.find((c) => c.id === 'outra')!.reservaEmergencia).toBe(false);
   });
 
   it('sem Caixinhas: totais zerados e nenhum aviso', async () => {

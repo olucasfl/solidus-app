@@ -11,6 +11,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { dataIsoDe, diasEntre, ehDataIso } from '../../domain/carteira/datas';
 import {
   CaixinhaNaoEncontradaError,
+  CaixinhaReservasIncompativeisError,
   dadoInvalido,
   MovimentoNaoEncontradoError,
   TransacaoInvalidaError,
@@ -37,12 +38,16 @@ export class CaixinhasService {
   }
 
   async criar(userId: string, dto: CriarCaixinhaDto): Promise<Caixinha> {
+    if (dto.reservaDeGastos === true && dto.reservaEmergencia === true) {
+      throw new CaixinhaReservasIncompativeisError();
+    }
     const criada = await this.prisma.caixinha.create({
       data: {
         userId,
         nome: dto.nome,
         percentualCdiBp: dto.percentualCdiBp,
         reservaDeGastos: dto.reservaDeGastos ?? false,
+        reservaEmergencia: dto.reservaEmergencia ?? false,
         convencaoRendimento: dto.convencaoRendimento ?? null,
       },
     });
@@ -50,13 +55,26 @@ export class CaixinhasService {
   }
 
   async atualizar(userId: string, id: string, dto: AtualizarCaixinhaDto): Promise<Caixinha> {
-    await this.exigirCaixinha(userId, id);
+    const atual = await this.prisma.caixinha.findFirst({
+      where: { id, userId },
+      select: { reservaDeGastos: true, reservaEmergencia: true },
+    });
+    if (!atual) {
+      throw new CaixinhaNaoEncontradaError();
+    }
+    // O estado RESULTANTE (o que já existe + o que o PATCH muda) é que não pode ter as duas reservas.
+    const gastos = dto.reservaDeGastos ?? atual.reservaDeGastos;
+    const emergencia = dto.reservaEmergencia ?? atual.reservaEmergencia;
+    if (gastos && emergencia) {
+      throw new CaixinhaReservasIncompativeisError();
+    }
     const atualizada = await this.prisma.caixinha.update({
       where: { id, userId },
       data: {
         ...(dto.nome !== undefined && { nome: dto.nome }),
         ...(dto.percentualCdiBp !== undefined && { percentualCdiBp: dto.percentualCdiBp }),
         ...(dto.reservaDeGastos !== undefined && { reservaDeGastos: dto.reservaDeGastos }),
+        ...(dto.reservaEmergencia !== undefined && { reservaEmergencia: dto.reservaEmergencia }),
         ...(dto.convencaoRendimento !== undefined && {
           convencaoRendimento: dto.convencaoRendimento,
         }),
@@ -216,6 +234,7 @@ export class CaixinhasService {
       nome: c.nome,
       percentualCdiBp: c.percentualCdiBp,
       reservaDeGastos: c.reservaDeGastos,
+      reservaEmergencia: c.reservaEmergencia,
       convencaoRendimento: c.convencaoRendimento,
       ativa: c.ativa,
     };

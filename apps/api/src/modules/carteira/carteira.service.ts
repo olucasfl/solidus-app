@@ -73,6 +73,7 @@ export class CarteiraService {
         nome: c.nome,
         percentualCdiBp: c.percentualCdiBp,
         reservaDeGastos: c.reservaDeGastos,
+        reservaEmergencia: c.reservaEmergencia,
         ativa: c.ativa,
         saldoInformado: p.saldoInformado,
         saldoBrutoEstimadoCentavos: p.saldoBrutoCentavos,

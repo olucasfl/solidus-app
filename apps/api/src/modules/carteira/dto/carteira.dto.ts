@@ -45,6 +45,14 @@ export class CriarCaixinhaDto {
   @IsBoolean()
   reservaDeGastos?: boolean;
 
+  // spec reserva-emergencia: não pode ser true junto com reservaDeGastos (o service recusa com 400)
+  // Ausente = não muda. `@IsOptional()` trataria `null` como ausente e ele chegaria ao Prisma (coluna booleana
+  // obrigatória → 500); com `@ValidateIf` só `undefined` é "não enviado" e `null` vira 400.
+  @ValidateIf((o: { reservaEmergencia?: unknown }) => o.reservaEmergencia !== undefined)
+  @Transform(booleanoCru)
+  @IsBoolean()
+  reservaEmergencia?: boolean;
+
   @IsOptional()
   @IsIn(CONVENCOES)
   convencaoRendimento?: (typeof CONVENCOES)[number];
@@ -67,6 +75,14 @@ export class AtualizarCaixinhaDto {
   @Transform(booleanoCru)
   @IsBoolean()
   reservaDeGastos?: boolean;
+
+  // spec reserva-emergencia: não pode ser true junto com reservaDeGastos (o service recusa com 400)
+  // Ausente = não muda. `@IsOptional()` trataria `null` como ausente e ele chegaria ao Prisma (coluna booleana
+  // obrigatória → 500); com `@ValidateIf` só `undefined` é "não enviado" e `null` vira 400.
+  @ValidateIf((o: { reservaEmergencia?: unknown }) => o.reservaEmergencia !== undefined)
+  @Transform(booleanoCru)
+  @IsBoolean()
+  reservaEmergencia?: boolean;
 
   // null volta para a convenção padrão
   @IsOptional()

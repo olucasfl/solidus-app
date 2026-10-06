@@ -3,6 +3,7 @@ import * as relogio from '../../common/relogio';
 import { PrismaService } from '../../database/prisma.service';
 import {
   CaixinhaNaoEncontradaError,
+  CaixinhaReservasIncompativeisError,
   MovimentoNaoEncontradoError,
   TransacaoInvalidaError,
   TransacaoJaVinculadaError,
@@ -44,6 +45,7 @@ const caixinhaBanco = {
   nome: 'Turbo',
   percentualCdiBp: 11_500,
   reservaDeGastos: false,
+  reservaEmergencia: false,
   convencaoRendimento: null,
   ativa: true,
   criadoEm: new Date(),
@@ -63,6 +65,7 @@ describe('CaixinhasService — Caixinhas (CA-13)', () => {
         nome: 'Turbo',
         percentualCdiBp: 11_500,
         reservaDeGastos: false,
+        reservaEmergencia: false,
         convencaoRendimento: null,
       },
     });
@@ -71,8 +74,121 @@ describe('CaixinhasService — Caixinhas (CA-13)', () => {
       nome: 'Turbo',
       percentualCdiBp: 11_500,
       reservaDeGastos: false,
+      reservaEmergencia: false,
       convencaoRendimento: null,
       ativa: true,
+    });
+  });
+
+  describe('reserva de emergência (spec reserva-emergencia)', () => {
+    it('criar marcada como reserva de emergência grava reservaEmergencia: true', async () => {
+      const { prisma, service } = montar();
+      prisma.caixinha.create.mockResolvedValue({ ...caixinhaBanco, reservaEmergencia: true });
+
+      const r = await service.criar(U, {
+        nome: 'Turbo',
+        percentualCdiBp: 11_500,
+        reservaEmergencia: true,
+      });
+
+      expect(prisma.caixinha.create.mock.calls[0]![0].data.reservaEmergencia).toBe(true);
+      expect(r.reservaEmergencia).toBe(true);
+    });
+
+    it('CA-14: criar com as DUAS reservas → 400 CAIXINHA_RESERVAS_INCOMPATIVEIS e nada é criado', async () => {
+      const { prisma, service } = montar();
+
+      await expect(
+        service.criar(U, {
+          nome: 'X',
+          percentualCdiBp: 0,
+          reservaDeGastos: true,
+          reservaEmergencia: true,
+        }),
+      ).rejects.toBeInstanceOf(CaixinhaReservasIncompativeisError);
+      expect(prisma.caixinha.create).not.toHaveBeenCalled();
+    });
+
+    it('marcar como emergência uma Caixinha normal funciona', async () => {
+      const { prisma, service } = montar();
+      prisma.caixinha.findFirst.mockResolvedValue({
+        id: 'c1',
+        reservaDeGastos: false,
+        reservaEmergencia: false,
+      });
+      prisma.caixinha.update.mockResolvedValue({ ...caixinhaBanco, reservaEmergencia: true });
+
+      await service.atualizar(U, 'c1', { reservaEmergencia: true });
+
+      expect(prisma.caixinha.update.mock.calls[0]![0].data).toEqual({ reservaEmergencia: true });
+    });
+
+    it('CA-14: marcar como emergência uma Caixinha que JÁ é reserva de gastos → 400 e nada muda', async () => {
+      const { prisma, service } = montar();
+      prisma.caixinha.findFirst.mockResolvedValue({
+        id: 'c1',
+        reservaDeGastos: true,
+        reservaEmergencia: false,
+      });
+
+      await expect(service.atualizar(U, 'c1', { reservaEmergencia: true })).rejects.toBeInstanceOf(
+        CaixinhaReservasIncompativeisError,
+      );
+      expect(prisma.caixinha.update).not.toHaveBeenCalled();
+    });
+
+    it('CA-14: o inverso (marcar reserva de gastos numa Caixinha que já é emergência) → 400', async () => {
+      const { prisma, service } = montar();
+      prisma.caixinha.findFirst.mockResolvedValue({
+        id: 'c1',
+        reservaDeGastos: false,
+        reservaEmergencia: true,
+      });
+
+      await expect(service.atualizar(U, 'c1', { reservaDeGastos: true })).rejects.toBeInstanceOf(
+        CaixinhaReservasIncompativeisError,
+      );
+      expect(prisma.caixinha.update).not.toHaveBeenCalled();
+    });
+
+    it('o que vale é o estado RESULTANTE: trocar de uma reserva para a outra no mesmo PATCH é permitido', async () => {
+      const { prisma, service } = montar();
+      prisma.caixinha.findFirst.mockResolvedValue({
+        id: 'c1',
+        reservaDeGastos: true,
+        reservaEmergencia: false,
+      });
+      prisma.caixinha.update.mockResolvedValue({ ...caixinhaBanco, reservaEmergencia: true });
+
+      await service.atualizar(U, 'c1', { reservaDeGastos: false, reservaEmergencia: true });
+
+      expect(prisma.caixinha.update.mock.calls[0]![0].data).toEqual({
+        reservaDeGastos: false,
+        reservaEmergencia: true,
+      });
+    });
+
+    it('desmarcar a reserva de emergência funciona (false explícito)', async () => {
+      const { prisma, service } = montar();
+      prisma.caixinha.findFirst.mockResolvedValue({
+        id: 'c1',
+        reservaDeGastos: false,
+        reservaEmergencia: true,
+      });
+      prisma.caixinha.update.mockResolvedValue({ ...caixinhaBanco, reservaEmergencia: false });
+
+      await service.atualizar(U, 'c1', { reservaEmergencia: false });
+
+      expect(prisma.caixinha.update.mock.calls[0]![0].data).toEqual({ reservaEmergencia: false });
+    });
+
+    it('a busca da Caixinha filtra pelo usuário da sessão', async () => {
+      const { prisma, service } = montar();
+      prisma.caixinha.update.mockResolvedValue(caixinhaBanco);
+
+      await service.atualizar(U, 'c1', { reservaEmergencia: true });
+
+      expect(prisma.caixinha.findFirst.mock.calls[0]![0].where).toEqual({ id: 'c1', userId: U });
     });
   });
 

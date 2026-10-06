@@ -172,9 +172,95 @@ describe('carteira por Caixinha (e2e)', () => {
           nome: 'Turbo',
           percentualCdiBp: 11_500,
           reservaDeGastos: false,
+          reservaEmergencia: false,
           convencaoRendimento: null,
         },
       });
+    });
+  });
+
+  describe('reserva de emergência (spec reserva-emergencia)', () => {
+    it.each([
+      ['texto "false" (nunca vira true por conversão implícita)', { reservaEmergencia: 'false' }],
+      ['texto "true"', { reservaEmergencia: 'true' }],
+      ['número 1', { reservaEmergencia: 1 }],
+      ['null', { reservaEmergencia: null }],
+    ])('CA-13: POST /caixinhas com reservaEmergencia %s → 400, sem criar', async (_nome, extra) => {
+      const r = await http()
+        .post('/caixinhas')
+        .set('Authorization', auth)
+        .send({ nome: 'Turbo', percentualCdiBp: 11_500, ...extra });
+
+      expect(r.status).toBe(400);
+      expect(prisma.caixinha.create).not.toHaveBeenCalled();
+    });
+
+    it('CA-13: POST /caixinhas com reservaEmergencia true → 201 e grava true', async () => {
+      prisma.caixinha.create.mockResolvedValue({
+        id: UUID,
+        nome: 'Turbo',
+        percentualCdiBp: 11_500,
+        reservaDeGastos: false,
+        reservaEmergencia: true,
+        ativa: true,
+      });
+
+      const r = await http()
+        .post('/caixinhas')
+        .set('Authorization', auth)
+        .send({ nome: 'Turbo', percentualCdiBp: 11_500, reservaEmergencia: true });
+
+      expect(r.status).toBe(201);
+      expect(r.body.reservaEmergencia).toBe(true);
+      expect(prisma.caixinha.create.mock.calls[0]![0].data.reservaEmergencia).toBe(true);
+    });
+
+    it('CA-14: POST com as duas reservas → 400 CAIXINHA_RESERVAS_INCOMPATIVEIS', async () => {
+      const r = await http()
+        .post('/caixinhas')
+        .set('Authorization', auth)
+        .send({ nome: 'X', percentualCdiBp: 0, reservaDeGastos: true, reservaEmergencia: true });
+
+      expect(r.status).toBe(400);
+      expect(r.body.code).toBe('CAIXINHA_RESERVAS_INCOMPATIVEIS');
+      expect(prisma.caixinha.create).not.toHaveBeenCalled();
+    });
+
+    it('CA-13: PATCH com reservaEmergencia em texto ("false") → 400, sem tocar no banco', async () => {
+      const r = await http()
+        .patch(`/caixinhas/${UUID}`)
+        .set('Authorization', auth)
+        .send({ reservaEmergencia: 'false' });
+
+      expect(r.status).toBe(400);
+      expect(prisma.caixinha.update).not.toHaveBeenCalled();
+    });
+
+    it('CA-13: PATCH com reservaEmergencia null → 400 (null não vai para uma coluna booleana obrigatória)', async () => {
+      const r = await http()
+        .patch(`/caixinhas/${UUID}`)
+        .set('Authorization', auth)
+        .send({ reservaEmergencia: null });
+
+      expect(r.status).toBe(400);
+      expect(prisma.caixinha.update).not.toHaveBeenCalled();
+    });
+
+    it('CA-14: PATCH que deixaria a Caixinha com as duas reservas → 400 e nada muda', async () => {
+      prisma.caixinha.findFirst.mockResolvedValue({
+        id: UUID,
+        reservaDeGastos: true,
+        reservaEmergencia: false,
+      });
+
+      const r = await http()
+        .patch(`/caixinhas/${UUID}`)
+        .set('Authorization', auth)
+        .send({ reservaEmergencia: true });
+
+      expect(r.status).toBe(400);
+      expect(r.body.code).toBe('CAIXINHA_RESERVAS_INCOMPATIVEIS');
+      expect(prisma.caixinha.update).not.toHaveBeenCalled();
     });
   });
 

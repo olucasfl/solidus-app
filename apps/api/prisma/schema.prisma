@@ -33,15 +33,16 @@ model User {
   // null = USUARIO. ADMIN edita o que é global (tabelas de imposto).
   papel        PapelUsuario?
 
-  sessoes       RefreshSession[]
-  contas        Conta[]
-  transacoes    Transacao[]
-  syncRuns      SyncRun[]
-  regras        RegraCategoria[]
-  caixinhas     Caixinha[]
-  movimentos    MovimentoCaixinha[]
-  fontesRenda   FonteRenda[]
-  conexaoPluggy ConexaoPluggy?
+  sessoes             RefreshSession[]
+  contas              Conta[]
+  transacoes          Transacao[]
+  syncRuns            SyncRun[]
+  regras              RegraCategoria[]
+  caixinhas           Caixinha[]
+  movimentos          MovimentoCaixinha[]
+  fontesRenda         FonteRenda[]
+  conexaoPluggy       ConexaoPluggy?
+  configuracaoReserva ConfiguracaoReserva?
 }
 
 enum PapelUsuario {
@@ -238,6 +239,8 @@ model Caixinha {
   percentualCdiBp     Int
   // conta no patrimônio, mas é verba para gastar no mês (não é "investido")
   reservaDeGastos     Boolean              @default(false)
+  // spec reserva-emergencia: faz parte da reserva de EMERGÊNCIA (não confundir com reservaDeGastos, que é verba do mês)
+  reservaEmergencia   Boolean              @default(false)
   // null = convenção padrão do app; o usuário muda se a conferência (GET /caixinhas/:id/conferencia)
   // mostrar que o banco dele credita de outro jeito
   convencaoRendimento ConvencaoRendimento?
@@ -328,4 +331,23 @@ model ConexaoPluggy {
   // só o code (ex.: PLUGGY_INDISPONIVEL), nunca a mensagem do Pluggy
   erroVerificacao       String?   @db.VarChar(60)
   atualizadoEm          DateTime  @updatedAt
+}
+
+// --- Reserva de emergência (spec reserva-emergencia) ---
+
+enum BaseGastoReserva {
+  BRUTA
+  LIQUIDA
+}
+
+// Configuração da reserva de emergência. Sem linha, valem os padrões (6 meses, base BRUTA, janela de 6).
+// A política de investimento completa (spec futura) pode absorver esta tabela.
+model ConfiguracaoReserva {
+  id           String           @id @default(uuid())
+  userId       String           @unique
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meses        Int              @default(6)
+  base         BaseGastoReserva @default(BRUTA)
+  janelaMeses  Int              @default(6)
+  atualizadoEm DateTime         @updatedAt
 }

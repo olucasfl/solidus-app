@@ -1,5 +1,17 @@
 import { BadRequestException, HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 
+/** Dinheiro para gastar no mês e reserva de emergência são opostos: uma Caixinha não pode ser os dois. */
+export class CaixinhaReservasIncompativeisError extends BadRequestException {
+  constructor() {
+    super({
+      statusCode: 400,
+      code: 'CAIXINHA_RESERVAS_INCOMPATIVEIS',
+      message:
+        'Uma Caixinha não pode ser reserva de gastos e reserva de emergência ao mesmo tempo.',
+    });
+  }
+}
+
 export class CaixinhaNaoEncontradaError extends NotFoundException {
   constructor() {
     super({

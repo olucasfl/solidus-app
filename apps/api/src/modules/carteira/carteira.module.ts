@@ -29,5 +29,7 @@ import { ImpostosService } from './impostos.service';
     SyncTokenGuard,
     { provide: CdiGateway, useClass: BcbCdiGateway },
   ],
+  // A reserva de emergência (spec reserva-emergencia) lê o saldo por Caixinha daqui.
+  exports: [CarteiraService],
 })
 export class CarteiraModule {}

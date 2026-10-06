@@ -11,6 +11,7 @@ const MODELOS_DO_USUARIO = [
   'movimentoCaixinha',
   'fonteRenda',
   'conexaoPluggy',
+  'configuracaoReserva',
 ];
 const OPERACOES = [
   'findMany',
